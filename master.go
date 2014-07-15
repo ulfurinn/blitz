@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -60,6 +61,7 @@ type Instance struct {
 	id               string
 	patch            int64
 	network, address string
+	requests         int64
 }
 
 type masterRequest struct {
@@ -142,6 +144,10 @@ func (m *Master) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 			return
 		}
 		h := versionRouter.Route(strings.Split(path, "/"))
+		// do this here so that the collector in announce will see it as busy
+		if h != nil {
+			atomic.AddInt64(&h.requests, 1)
+		}
 		m.routeLock.RUnlock()
 		if h == nil {
 			resp.WriteHeader(404)
@@ -156,6 +162,7 @@ func (m *Master) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 			},
 		}
 		proxy.ServeHTTP(resp, req)
+		defer atomic.AddInt64(&h.requests, -1)
 	}
 }
 
@@ -196,6 +203,7 @@ func (m *Master) Announce(cmd Command, c *WorkerConnection) {
 	m.routeLock.Lock()
 	defer m.routeLock.Unlock()
 	m.Mount(cmd.Paths, proc)
+	// collect unused ones here
 }
 
 func (m *Master) Mount(paths []PathSpec, proc *Instance) {
