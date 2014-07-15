@@ -27,21 +27,12 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	w := blitz.Worker{Patch: i}
-	w.Init()
-	err = w.Listen()
-	if err != nil {
-		fatal(err)
+	w := blitz.Worker{
+		Patch:   i,
+		Handler: api(),
+		Paths:   []blitz.PathSpec{{Path: "/sleep", Version: 1}},
 	}
-	err = w.Connect()
-	if err != nil {
-		fatal(err)
-	}
-	err = w.Announce([]blitz.PathSpec{{Path: "/sleep", Version: 1}})
-	if err != nil {
-		fatal(err)
-	}
-	w.Serve(api())
+	err = w.Run()
 }
 
 func api() http.Handler {

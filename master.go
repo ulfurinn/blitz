@@ -30,6 +30,7 @@ type PathSpec struct {
 type Command struct {
 	Type    string     `json:"type"`
 	Tag     string     `json:"tag"`
+	PID     int        `json:"pid"`
 	ProcID  string     `json:"procid"`
 	Patch   int64      `json:"patch"`
 	Paths   []PathSpec `json:"paths"`
@@ -59,8 +60,10 @@ type Instance struct {
 	exe              *Executable
 	connection       *WorkerConnection
 	id               string
+	pid              int
 	patch            int64
 	network, address string
+	proxy            http.Handler
 	requests         int64
 }
 
@@ -153,17 +156,23 @@ func (m *Master) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 			resp.WriteHeader(404)
 			return
 		}
-		proxy := &httputil.ReverseProxy{
-			Transport: unixTransport,
-			Director: func(newreq *http.Request) {
-				newreq.URL.Scheme = "http"
-				newreq.URL.Host = h.address
-				fmt.Println(*newreq.URL)
-			},
-		}
-		proxy.ServeHTTP(resp, req)
 		defer atomic.AddInt64(&h.requests, -1)
+		h.ServeHTTP(resp, req)
 	}
+}
+
+func (i *Instance) makeRevProxy() {
+	i.proxy = &httputil.ReverseProxy{
+		Transport: unixTransport,
+		Director: func(newreq *http.Request) {
+			newreq.URL.Scheme = "http"
+			newreq.URL.Host = i.address
+		},
+	}
+}
+
+func (i *Instance) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+	i.proxy.ServeHTTP(resp, req)
 }
 
 func (m *Master) Loop() {
@@ -196,7 +205,10 @@ func (m *Master) Announce(cmd Command, c *WorkerConnection) {
 	if proc == nil {
 		return
 	}
+	proc.makeRevProxy()
+	proc.id = "" // not needed anymore
 	proc.connection = c
+	proc.pid = cmd.PID
 	proc.patch = cmd.Patch
 	proc.network = cmd.Network
 	proc.address = cmd.Address
@@ -274,6 +286,7 @@ func (m *Master) connectionClosed(w *WorkerConnection) {
 	if proc == nil {
 		return
 	}
+	fmt.Printf("instance left: %v\n", *proc)
 	m.Unmount(proc)
 	m.procs[index] = nil
 	m.procs = append(m.procs[:index], m.procs[index+1:]...)

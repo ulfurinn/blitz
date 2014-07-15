@@ -22,36 +22,66 @@ type Worker struct {
 	socket   string
 	listener net.Listener
 	Patch    int64
+	Handler  http.Handler
+	Paths    []PathSpec
 }
 
-func (w *Worker) Init() {
+func (w *Worker) Run() (err error) {
+	err = w.init()
+	if err != nil {
+		return
+	}
+	err = w.announce(w.Paths)
+	if err != nil {
+		return
+	}
+	w.Serve(w.Handler)
+	return
+}
+
+func (w *Worker) init() (err error) {
 	os.MkdirAll("blitz", os.ModeDir|0775)
+	err = w.listen()
+	if err != nil {
+		return
+	}
+	err = w.connect()
+	return
 }
 
-func (w *Worker) Connect() error {
+func (w *Worker) connect() (err error) {
 	conn, err := net.Dial("unix", "blitz/ctl")
 	if err != nil {
-		return err
+		return
 	}
 	w.conn = conn
-	return nil
+	return
 }
 
-func (w *Worker) Listen() error {
+func (w *Worker) listen() (err error) {
 	w.socket = fmt.Sprintf("blitz/%d.worker", os.Getpid())
 	listener, err := net.Listen("unix", w.socket)
+	if err != nil {
+		return
+	}
 	w.listener = listener
 	ch := make(chan os.Signal)
 	signal.Notify(ch, os.Interrupt, os.Kill)
-	go func() {
-		<-ch
-		err := listener.Close()
-		if err != nil {
-			fatal(err)
-		}
-		os.Exit(0)
-	}()
-	return err
+	go w.cleanup(ch)
+	return
+}
+
+func (w *Worker) cleanup(ch chan os.Signal) {
+	<-ch
+	err := w.listener.Close()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	err = w.conn.Close()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	os.Exit(0)
 }
 
 func (w *Worker) send(data interface{}) error {
@@ -59,10 +89,11 @@ func (w *Worker) send(data interface{}) error {
 	return encoder.Encode(data)
 }
 
-func (w *Worker) Announce(spec []PathSpec) error {
+func (w *Worker) announce(spec []PathSpec) error {
 	a := Command{}
 	a.Type = "announce"
 	a.ProcID = procID
+	a.PID = os.Getpid()
 	a.Network = "unix"
 	a.Address = w.socket
 	a.Patch = w.Patch
