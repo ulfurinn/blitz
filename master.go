@@ -324,7 +324,7 @@ func (w *WorkerConnection) Run() {
 		resp := <-ret
 		clientResp := Response{}
 		if resp.err != nil {
-			clientResp.Error = err.Error()
+			clientResp.Error = resp.err.Error()
 		}
 		w.send(clientResp)
 	}
