@@ -194,7 +194,7 @@ func (e *Executable) release() {
 }
 
 func (m *Master) Loop() {
-	t := time.NewTimer(time.Second)
+	t := time.NewTicker(time.Second)
 	for {
 		select {
 		case cmd := <-m.cmdCh:
