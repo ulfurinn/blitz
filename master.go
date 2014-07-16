@@ -60,14 +60,15 @@ type Snapshot struct {
 }
 
 type Master struct {
-	execs            []*Executable
-	procs            []*Instance
-	scheduledRemoval InstanceSet
-	routers          map[int]*Router
-	routeLock        *sync.RWMutex
-	cmdCh            chan masterRequest
-	snapshotCh       chan chan *Snapshot
-	server           *http.Server
+	execs              []*Executable
+	procs              []*Instance
+	scheduledRemoval   InstanceSet
+	routers            map[int]*Router
+	routeLock          *sync.RWMutex
+	cmdCh              chan masterRequest
+	snapshotCh         chan chan *Snapshot
+	connectionClosedCh chan *WorkerConnection
+	server             *http.Server
 }
 
 type Executable struct {
@@ -109,11 +110,12 @@ func randstr(n int64) string {
 
 func NewMaster() *Master {
 	return &Master{
-		routers:          make(map[int]*Router),
-		routeLock:        &sync.RWMutex{},
-		cmdCh:            make(chan masterRequest),
-		snapshotCh:       make(chan chan *Snapshot),
-		scheduledRemoval: make(InstanceSet),
+		routers:            make(map[int]*Router),
+		routeLock:          &sync.RWMutex{},
+		cmdCh:              make(chan masterRequest),
+		snapshotCh:         make(chan chan *Snapshot),
+		connectionClosedCh: make(chan *WorkerConnection),
+		scheduledRemoval:   make(InstanceSet),
 	}
 }
 
@@ -235,14 +237,14 @@ func (i *Instance) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 }
 
 func (i *Instance) Shutdown() {
-	fmt.Printf("releasing instance %v\n", *i)
+	//fmt.Printf("releasing instance %v\n", *i)
 	//i.connection.conn.Close()
 	syscall.Kill(i.Pid, syscall.SIGINT)
 	i.cmd.Wait()
 }
 
 func (e *Executable) release() {
-	fmt.Printf("releasing executable %v\n", *e)
+	//fmt.Printf("releasing executable %v\n", *e)
 	os.Rename(e.Exe, fmt.Sprintf("blitz/deploy-old/%s", e.Basename))
 }
 
@@ -251,7 +253,7 @@ func (m *Master) Loop() {
 	for {
 		select {
 		case cmd := <-m.cmdCh:
-			fmt.Fprintln(os.Stderr, cmd.cmd)
+			//fmt.Fprintln(os.Stderr, cmd.cmd)
 			switch cmd.cmd.Type {
 			case "announce":
 				m.Announce(cmd.cmd, cmd.conn)
@@ -266,6 +268,8 @@ func (m *Master) Loop() {
 			m.cleanupInstances(m.scheduledRemoval)
 		case ret := <-m.snapshotCh:
 			ret <- m.snapshot()
+		case w := <-m.connectionClosedCh:
+			m.connectionClosed(w)
 		}
 	}
 }
@@ -466,10 +470,18 @@ func (m *Master) connectionClosed(w *WorkerConnection) {
 	if proc == nil {
 		return
 	}
-	fmt.Printf("instance left: %v\n", *proc)
+	//fmt.Printf("instance left: %v\n", *proc)
 	m.Unmount(proc)
 	m.procs[index] = nil
 	m.procs = append(m.procs[:index], m.procs[index+1:]...)
+}
+
+func (m *Master) PrintProcList() {
+	pids := []int{}
+	for _, i := range m.procs {
+		pids = append(pids, i.Pid)
+	}
+	fmt.Println(pids)
 }
 
 type WorkerConnection struct {
@@ -484,7 +496,7 @@ func (w *WorkerConnection) send(data interface{}) error {
 
 func (w *WorkerConnection) closed() {
 	w.conn.Close()
-	w.master.connectionClosed(w)
+	w.master.connectionClosedCh <- w
 }
 
 func (w *WorkerConnection) Run() {
