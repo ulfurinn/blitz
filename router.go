@@ -13,7 +13,7 @@ func NewRouter() *Router {
 
 func (r *Router) Mount(path []string, handler *Instance) {
 	if len(path) == 0 || len(path) == 1 && path[0] == "" {
-		if r.handler == nil || r.handler.patch <= handler.patch {
+		if r.handler == nil || r.handler.Patch <= handler.Patch {
 			r.handler = handler
 		}
 		return
@@ -57,6 +57,22 @@ func (r *Router) UsedInstances() (result []*Instance) {
 	}
 	for i, _ := range used {
 		result = append(result, i)
+	}
+	return
+}
+
+func (r *Router) snapshot(root string) (result []*SnapshotRoute) {
+	if r.handler != nil {
+		result = append(result, &SnapshotRoute{Path: root, Instance: r.handler})
+	}
+	for component, router := range r.routes {
+		var newroot string
+		if root == "/" {
+			newroot = root + component
+		} else {
+			newroot = root + "/" + component
+		}
+		result = append(result, router.snapshot(newroot)...)
 	}
 	return
 }

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>blizzard status</title>
+        <style>
+        table {
+            border-collapse: collapse;
+        }
+        tr.obsolete {
+            background-color: silver;
+        }
+        th, td {
+            border: 1px solid black;
+            padding: 8px;
+        }
+        </style>
+    </head>
+    <body>
+        <h1>blizzard status</h1>
+
+        <h2>Routes</h2>
+        <div id="routes">
+            <table>
+                <tr>
+                    <th>Version</th>
+                    <th>Path</th>
+                    <th>Handler pid</th>
+                </tr>
+                {{ range .Routes }}
+                <tr>
+                    <td>{{ .Version }}</td>
+                    <td>{{ .Path }}</td>
+                    <td>{{ .Instance.Pid }}</td>
+                </tr>
+                {{ end }}
+            </table>
+        </div>
+
+        <h2>Instances</h2>
+        <div id="instances">
+            <table>
+                <tr>
+                    <th>Pid</th>
+                    <th>Exe</th>
+                    <th>Socket</th>
+                    <th>Requests</th>
+                </tr>
+                {{ range .Procs }}
+                <tr{{ if .Obsolete }} class="obsolete"{{ end }}>
+                    <td>{{ .Pid }}</td>
+                    <td>{{ .Exe.Basename }}</td>
+                    <td>{{ .Address }}</td>
+                    <td>{{ .Requests }}</td>
+                </tr>
+                {{ end }}
+            </table>
+        </div>
+
+        <h2>Executables</h2>
+        <div id="executables">
+            <table>
+                <tr>
+                    <th>Name</th>
+                </tr>
+                {{ range .Execs }}
+                <tr>
+                    <td>{{ .Exe }}</td>
+                </tr>
+                {{ end }}
+        </div>
+    </body>
+</html>
