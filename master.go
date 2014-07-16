@@ -69,6 +69,7 @@ type Instance struct {
 	proxy            http.Handler
 	requests         int64
 	obsolete         bool
+	cmd              *exec.Cmd
 }
 
 type InstanceSet map[*Instance]struct{}
@@ -186,6 +187,7 @@ func (i *Instance) Shutdown() {
 	fmt.Printf("releasing instance %v\n", *i)
 	//i.connection.conn.Close()
 	syscall.Kill(i.pid, syscall.SIGINT)
+	i.cmd.Wait()
 }
 
 func (e *Executable) release() {
@@ -374,8 +376,8 @@ func (m *Master) BootDeployed(exe, basename string) error {
 	i := &Instance{exe: e, id: id}
 	m.execs = append(m.execs, e)
 	m.procs = append(m.procs, i)
-	cmd := exec.Command(exe, "--blitz-proc-id", id)
-	err := cmd.Start()
+	i.cmd = exec.Command(exe, "--blitz-proc-id", id)
+	err := i.cmd.Start()
 	return err
 }
 
