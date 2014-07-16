@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/codegangsta/martini"
 
@@ -42,5 +43,6 @@ func api() http.Handler {
 }
 
 func demo() (int, string) {
+	time.Sleep(10 * time.Second)
 	return 200, "blitz!"
 }
