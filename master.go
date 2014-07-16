@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -44,16 +45,18 @@ type Response struct {
 }
 
 type Master struct {
-	execs     []*Executable
-	procs     []*Instance
-	routers   map[int]*Router
-	routeLock *sync.RWMutex
-	cmdCh     chan masterRequest
-	server    *http.Server
+	execs            []*Executable
+	procs            []*Instance
+	scheduledRemoval InstanceSet
+	routers          map[int]*Router
+	routeLock        *sync.RWMutex
+	cmdCh            chan masterRequest
+	server           *http.Server
 }
 
 type Executable struct {
-	exe string
+	exe      string
+	basename string
 }
 
 type Instance struct {
@@ -65,7 +68,10 @@ type Instance struct {
 	network, address string
 	proxy            http.Handler
 	requests         int64
+	obsolete         bool
 }
+
+type InstanceSet map[*Instance]struct{}
 
 type masterRequest struct {
 	cmd  Command
@@ -85,9 +91,10 @@ func randstr(n int64) string {
 
 func NewMaster() *Master {
 	return &Master{
-		routers:   make(map[int]*Router),
-		routeLock: &sync.RWMutex{},
-		cmdCh:     make(chan masterRequest),
+		routers:          make(map[int]*Router),
+		routeLock:        &sync.RWMutex{},
+		cmdCh:            make(chan masterRequest),
+		scheduledRemoval: make(InstanceSet),
 	}
 }
 
@@ -147,7 +154,7 @@ func (m *Master) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 			return
 		}
 		h := versionRouter.Route(strings.Split(path, "/"))
-		// do this here so that the collector in announce will see it as busy
+		// do this before unlocking so that the collector in announce will see it as busy
 		if h != nil {
 			atomic.AddInt64(&h.requests, 1)
 		}
@@ -175,7 +182,19 @@ func (i *Instance) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	i.proxy.ServeHTTP(resp, req)
 }
 
+func (i *Instance) Shutdown() {
+	fmt.Printf("releasing instance %v\n", *i)
+	//i.connection.conn.Close()
+	syscall.Kill(i.pid, syscall.SIGINT)
+}
+
+func (e *Executable) release() {
+	fmt.Printf("releasing executable %v\n", *e)
+	os.Rename(e.exe, fmt.Sprintf("blitz/deploy-old/%s", e.basename))
+}
+
 func (m *Master) Loop() {
+	t := time.NewTimer(time.Second)
 	for {
 		select {
 		case cmd := <-m.cmdCh:
@@ -190,8 +209,26 @@ func (m *Master) Loop() {
 			default:
 				cmd.ret <- masterResponse{err: fmt.Errorf("unknown command %s", cmd.cmd.Type)}
 			}
+		case <-t.C:
+			m.cleanupInstances(m.scheduledRemoval)
 		}
 	}
+}
+
+func (m *Master) ShutdownAndRemoveProcs(procs map[*Instance]struct{}) {
+	if len(procs) == 0 {
+		return
+	}
+	remaining := []*Instance{}
+	for _, i := range m.procs {
+		_, removable := procs[i]
+		if removable {
+			i.Shutdown()
+		} else {
+			remaining = append(remaining, i)
+		}
+	}
+	m.procs = remaining
 }
 
 func (m *Master) Announce(cmd Command, c *WorkerConnection) {
@@ -215,7 +252,74 @@ func (m *Master) Announce(cmd Command, c *WorkerConnection) {
 	m.routeLock.Lock()
 	defer m.routeLock.Unlock()
 	m.Mount(cmd.Paths, proc)
-	// collect unused ones here
+	m.CollectUnusedInstances()
+}
+
+func (m *Master) allMountedInstances() (used InstanceSet) {
+	used = make(InstanceSet)
+	for _, router := range m.routers {
+		for _, i := range router.UsedInstances() {
+			used[i] = struct{}{}
+		}
+	}
+	return
+}
+
+func (m *Master) allUnusedInstances(used InstanceSet) (unused InstanceSet) {
+	unused = make(InstanceSet)
+	for _, i := range m.procs {
+		_, isUsed := used[i]
+		if !isUsed {
+			i.obsolete = true
+			unused[i] = struct{}{}
+		}
+	}
+	return
+}
+
+func (m *Master) partitionUnusedInstances(unused InstanceSet) (immediate, scheduled InstanceSet) {
+	immediate = make(InstanceSet)
+	scheduled = make(InstanceSet)
+	for i, _ := range unused {
+		if atomic.LoadInt64(&i.requests) == 0 {
+			immediate[i] = struct{}{}
+		} else {
+			scheduled[i] = struct{}{}
+		}
+	}
+	return
+}
+
+func (m *Master) CollectUnusedInstances() {
+	used := m.allMountedInstances()
+	unused := m.allUnusedInstances(used)
+	m.cleanupInstances(unused)
+}
+
+func (m *Master) cleanupInstances(unused InstanceSet) {
+	immediate, scheduled := m.partitionUnusedInstances(unused)
+	m.ShutdownAndRemoveProcs(immediate)
+	m.scheduledRemoval = scheduled
+	if len(immediate) > 0 {
+		m.CollectUnusedBinaries()
+	}
+}
+
+func (m *Master) CollectUnusedBinaries() {
+	usedBinaries := make(map[*Executable]struct{})
+	for _, i := range m.procs {
+		usedBinaries[i.exe] = struct{}{}
+	}
+	remaining := []*Executable{}
+	for _, e := range m.execs {
+		_, isUsed := usedBinaries[e]
+		if !isUsed {
+			e.release()
+		} else {
+			remaining = append(remaining, e)
+		}
+	}
+	m.execs = remaining
 }
 
 func (m *Master) Mount(paths []PathSpec, proc *Instance) {
@@ -241,7 +345,9 @@ func (m *Master) Unmount(proc *Instance) {
 
 func (m *Master) Deploy(exe string) error {
 	components := strings.Split(exe, string(os.PathSeparator))
-	newname := fmt.Sprintf("blitz/deploy/%s.blitz%d", components[len(components)-1], time.Now().Unix())
+	basename := components[len(components)-1]
+	deployedName := fmt.Sprintf("%s.blitz%d", basename, time.Now().Unix())
+	newname := fmt.Sprintf("blitz/deploy/%s", deployedName)
 	origin, err := os.Open(exe)
 	if err != nil {
 		return err
@@ -259,12 +365,12 @@ func (m *Master) Deploy(exe string) error {
 		return err
 	}
 
-	return m.BootDeployed(newname)
+	return m.BootDeployed(newname, deployedName)
 }
 
-func (m *Master) BootDeployed(exe string) error {
+func (m *Master) BootDeployed(exe, basename string) error {
 	id := randstr(32)
-	e := &Executable{exe: exe}
+	e := &Executable{exe: exe, basename: basename}
 	i := &Instance{exe: e, id: id}
 	m.execs = append(m.execs, e)
 	m.procs = append(m.procs, i)

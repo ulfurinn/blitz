@@ -44,3 +44,19 @@ func (r *Router) Route(path []string) (handler *Instance) {
 	}
 	return
 }
+
+func (r *Router) UsedInstances() (result []*Instance) {
+	used := make(map[*Instance]struct{})
+	if r.handler != nil {
+		used[r.handler] = struct{}{}
+	}
+	for _, router := range r.routes {
+		for _, i := range router.UsedInstances() {
+			used[i] = struct{}{}
+		}
+	}
+	for i, _ := range used {
+		result = append(result, i)
+	}
+	return
+}
