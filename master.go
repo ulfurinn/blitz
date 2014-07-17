@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -139,6 +140,10 @@ func (m *Master) Run() {
 	}()
 	go m.HTTP()
 	go m.Loop()
+	err = m.BootAllDeployed()
+	if err != nil {
+		fatal(err)
+	}
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -443,12 +448,27 @@ func (m *Master) Deploy(exe string) error {
 		return err
 	}
 
-	return m.BootDeployed(newname, deployedName)
+	return m.BootDeployed(newname)
 }
 
-func (m *Master) BootDeployed(exe, basename string) error {
+func (m *Master) BootAllDeployed() error {
+	return filepath.Walk("blitz/deploy", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && info.Mode().Perm()&0111 > 0 {
+			err := m.BootDeployed(path)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (m *Master) BootDeployed(exe string) error {
 	id := randstr(32)
-	e := &Executable{Exe: exe, Basename: basename}
+	e := &Executable{Exe: exe, Basename: filepath.Base(exe)}
 	i := &Instance{Exe: e, id: id}
 	m.execs = append(m.execs, e)
 	m.procs = append(m.procs, i)
