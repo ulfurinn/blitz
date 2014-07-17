@@ -35,6 +35,7 @@ type SnapshotRoute struct {
 	Instance      *Instance
 	Requests      int64
 	TotalRequests uint64
+	Written       uint64
 }
 
 type Snapshot struct {
@@ -70,6 +71,7 @@ type Instance struct {
 	proxy            http.Handler
 	Requests         int64
 	TotalRequests    uint64
+	Written          uint64
 	Obsolete         bool
 	cmd              *exec.Cmd
 }
@@ -211,12 +213,15 @@ func (m *Master) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 			resp.WriteHeader(404)
 			return
 		}
+		counter := &countingResponseWriter{ResponseWriter: resp}
 		defer func() {
 			atomic.AddInt64(&r.requests, -1)
 			atomic.AddInt64(&h.Requests, -1)
+			atomic.AddUint64(&r.written, counter.written)
+			atomic.AddUint64(&h.Written, counter.written)
 		}()
 		req.Header.Set("X-Blitz-Path", concatPath(path))
-		h.ServeHTTP(resp, req)
+		h.ServeHTTP(counter, req)
 	}
 }
 

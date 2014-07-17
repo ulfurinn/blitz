@@ -13,6 +13,9 @@
             border: 1px solid black;
             padding: 8px;
         }
+        th[title] span {
+            border-bottom: 1px dotted black;
+        }
         </style>
     </head>
     <body>
@@ -27,6 +30,7 @@
                     <th>Handler pid</th>
                     <th>Requests</th>
                     <th>Total requests</th>
+                    <th title="without headers"><span>Data written</span></th>
                 </tr>
                 {{ range .Routes }}
                 <tr>
@@ -35,6 +39,7 @@
                     <td>{{ .Instance.Pid }}</td>
                     <td>{{ .Requests }}</td>
                     <td>{{ .TotalRequests }}</td>
+                    <td>{{ .Written }}</td>
                 </tr>
                 {{ end }}
             </table>
@@ -49,6 +54,7 @@
                     <th>Socket</th>
                     <th>Requests</th>
                     <th>Total requests</th>
+                    <th title="without headers"><span>Data written</span></th>
                 </tr>
                 {{ range .Procs }}
                 <tr{{ if .Obsolete }} class="obsolete"{{ end }}>
@@ -57,6 +63,7 @@
                     <td>{{ .Address }}</td>
                     <td>{{ .Requests }}</td>
                     <td>{{ .TotalRequests }}</td>
+                    <td>{{ .Written }}</td>
                 </tr>
                 {{ end }}
             </table>

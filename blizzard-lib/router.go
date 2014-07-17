@@ -10,6 +10,7 @@ type Router struct {
 	handler       *Instance
 	requests      int64
 	totalRequests uint64
+	written       uint64
 }
 
 func NewRouter() *Router {
@@ -75,6 +76,7 @@ func (r *Router) snapshot() (result []*SnapshotRoute) {
 			Instance:      r.handler,
 			Requests:      atomic.LoadInt64(&r.requests),
 			TotalRequests: atomic.LoadUint64(&r.totalRequests),
+			Written:       atomic.LoadUint64(&r.written),
 		})
 	}
 	for _, router := range r.routes {
