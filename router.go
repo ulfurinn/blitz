@@ -1,10 +1,14 @@
 package blitz
 
+import "sync/atomic"
+
 type RoutingTable map[string]*Router
 
 type Router struct {
-	routes  RoutingTable
-	handler *Instance
+	routes        RoutingTable
+	handler       *Instance
+	requests      int64
+	totalRequests uint64
 }
 
 func NewRouter() *Router {
@@ -27,20 +31,20 @@ func (r *Router) Mount(path []string, handler *Instance) {
 	router.Mount(path[1:], handler)
 }
 
-func (r *Router) Route(path []string) (handler *Instance) {
+func (r *Router) Route(path []string) (handlingRouter *Router, handler *Instance) {
 	if len(path) == 0 || len(path) == 1 && path[0] == "" {
-		return r.handler
+		return r, r.handler
 	}
 	router, ok := r.routes[path[0]]
 	if ok {
-		handler = router.Route(path[1:])
+		handlingRouter, handler = router.Route(path[1:])
 	}
 	if handler != nil {
 		return
 	}
 	router, ok = r.routes["*"]
 	if ok {
-		handler = router.Route(path[1:])
+		handlingRouter, handler = router.Route(path[1:])
 	}
 	return
 }
@@ -63,7 +67,12 @@ func (r *Router) UsedInstances() (result []*Instance) {
 
 func (r *Router) snapshot(root string) (result []*SnapshotRoute) {
 	if r.handler != nil {
-		result = append(result, &SnapshotRoute{Path: root, Instance: r.handler})
+		result = append(result, &SnapshotRoute{
+			Path:          root,
+			Instance:      r.handler,
+			Requests:      atomic.LoadInt64(&r.requests),
+			TotalRequests: atomic.LoadUint64(&r.totalRequests),
+		})
 	}
 	for component, router := range r.routes {
 		var newroot string

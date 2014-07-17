@@ -49,9 +49,11 @@ type Response struct {
 }
 
 type SnapshotRoute struct {
-	Path     string
-	Version  int
-	Instance *Instance
+	Path          string
+	Version       int
+	Instance      *Instance
+	Requests      int64
+	TotalRequests uint64
 }
 
 type Snapshot struct {
@@ -85,8 +87,8 @@ type Instance struct {
 	Patch            int64
 	network, Address string
 	proxy            http.Handler
-	requests         int64
-	Requests         int64 // a static copy for the snapshot only
+	Requests         int64
+	TotalRequests    uint64
 	Obsolete         bool
 	cmd              *exec.Cmd
 }
@@ -180,17 +182,23 @@ func (m *Master) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 			resp.WriteHeader(404)
 			return
 		}
-		h := versionRouter.Route(strings.Split(path, "/"))
+		r, h := versionRouter.Route(strings.Split(path, "/"))
 		// do this before unlocking so that the collector in announce will see it as busy
 		if h != nil {
-			atomic.AddInt64(&h.requests, 1)
+			atomic.AddInt64(&r.requests, 1)
+			atomic.AddUint64(&r.totalRequests, 1)
+			atomic.AddInt64(&h.Requests, 1)
+			atomic.AddUint64(&h.TotalRequests, 1)
 		}
 		m.routeLock.RUnlock()
 		if h == nil {
 			resp.WriteHeader(404)
 			return
 		}
-		defer atomic.AddInt64(&h.requests, -1)
+		defer func() {
+			atomic.AddInt64(&r.requests, -1)
+			atomic.AddInt64(&h.Requests, -1)
+		}()
 		h.ServeHTTP(resp, req)
 	}
 }
@@ -285,7 +293,6 @@ func (m *Master) snapshot() *Snapshot {
 		s.Execs = append(s.Execs, e)
 	}
 	for _, i := range m.procs {
-		i.Requests = atomic.LoadInt64(&i.requests)
 		s.Procs = append(s.Procs, i)
 	}
 	for v, router := range m.routers {
@@ -364,7 +371,7 @@ func (m *Master) partitionUnusedInstances(unused InstanceSet) (immediate, schedu
 	immediate = make(InstanceSet)
 	scheduled = make(InstanceSet)
 	for i, _ := range unused {
-		if atomic.LoadInt64(&i.requests) == 0 {
+		if atomic.LoadInt64(&i.Requests) == 0 {
 			immediate[i] = struct{}{}
 		} else {
 			scheduled[i] = struct{}{}

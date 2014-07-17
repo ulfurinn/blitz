@@ -25,12 +25,16 @@
                     <th>Version</th>
                     <th>Path</th>
                     <th>Handler pid</th>
+                    <th>Requests</th>
+                    <th>Total requests</th>
                 </tr>
                 {{ range .Routes }}
                 <tr>
                     <td>{{ .Version }}</td>
                     <td>{{ .Path }}</td>
                     <td>{{ .Instance.Pid }}</td>
+                    <td>{{ .Requests }}</td>
+                    <td>{{ .TotalRequests }}</td>
                 </tr>
                 {{ end }}
             </table>
@@ -44,6 +48,7 @@
                     <th>Exe</th>
                     <th>Socket</th>
                     <th>Requests</th>
+                    <th>Total requests</th>
                 </tr>
                 {{ range .Procs }}
                 <tr{{ if .Obsolete }} class="obsolete"{{ end }}>
@@ -51,6 +56,7 @@
                     <td>{{ .Exe.Basename }}</td>
                     <td>{{ .Address }}</td>
                     <td>{{ .Requests }}</td>
+                    <td>{{ .TotalRequests }}</td>
                 </tr>
                 {{ end }}
             </table>
