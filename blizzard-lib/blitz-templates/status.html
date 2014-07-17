@@ -51,6 +51,7 @@
                 <tr>
                     <th>Pid</th>
                     <th>Exe</th>
+                    <th>Patch</th>
                     <th>Socket</th>
                     <th>Requests</th>
                     <th>Total requests</th>
@@ -60,6 +61,7 @@
                 <tr{{ if .Obsolete }} class="obsolete"{{ end }}>
                     <td>{{ .Pid }}</td>
                     <td>{{ .Exe.Basename }}</td>
+                    <td>{{ .Patch }}</td>
                     <td>{{ .Address }}</td>
                     <td>{{ .Requests }}</td>
                     <td>{{ .TotalRequests }}</td>
