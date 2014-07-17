@@ -35,6 +35,20 @@ func (r *Router) Mount(path []string, handler *Instance, prefix string) {
 	router.Mount(path[1:], handler, routePath)
 }
 
+func (r *Router) Unmount(proc *Instance) {
+	routers := make(RoutingTable)
+	for key, router := range r.routers {
+		if router.handler != proc {
+			routers[key] = router
+		}
+		router.Unmount(proc)
+	}
+	if r.handler == proc {
+		r.handler = nil //	mainly to preserve the root router in master
+	}
+	r.routers = routers
+}
+
 func (r *Router) Route(path []string) (handlingRouter *Router, handler *Instance) {
 	if len(path) == 0 || len(path) == 1 && path[0] == "" {
 		return r, r.handler

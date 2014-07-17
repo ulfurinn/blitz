@@ -80,6 +80,7 @@ type Instance struct {
 	TotalRequests    uint64
 	Written          uint64
 	Obsolete         bool
+	dead             bool
 	cmd              *exec.Cmd
 }
 
@@ -271,6 +272,9 @@ func (i *Instance) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 }
 
 func (i *Instance) Shutdown() {
+	if i.dead {
+		return
+	}
 	//fmt.Printf("releasing instance %v\n", *i)
 	//i.connection.conn.Close()
 	syscall.Kill(i.Pid, syscall.SIGINT)
@@ -472,7 +476,9 @@ func (m *Master) Mount(paths []blitz.PathSpec, proc *Instance) {
 }
 
 func (m *Master) Unmount(proc *Instance) {
-
+	for _, r := range m.routers {
+		r.Unmount(proc)
+	}
 }
 
 func (m *Master) Deploy(exe string) error {
@@ -528,11 +534,9 @@ func (m *Master) BootDeployed(exe string) error {
 
 func (m *Master) connectionClosed(w *WorkerConnection) {
 	var proc *Instance
-	var index int
-	for i, p := range m.procs {
+	for _, p := range m.procs {
 		if p.connection == w {
 			proc = p
-			index = i
 			break
 		}
 	}
@@ -540,9 +544,11 @@ func (m *Master) connectionClosed(w *WorkerConnection) {
 		return
 	}
 	//fmt.Printf("instance left: %v\n", *proc)
+	m.routeLock.Lock()
+	defer m.routeLock.Unlock()
+	proc.dead = true
 	m.Unmount(proc)
-	m.procs[index] = nil
-	m.procs = append(m.procs[:index], m.procs[index+1:]...)
+	m.CollectUnusedInstances()
 }
 
 func (m *Master) PrintProcList() {
