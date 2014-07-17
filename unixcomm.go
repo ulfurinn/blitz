@@ -16,7 +16,7 @@ func (d *unixDialer) Dial(network, address string) (net.Conn, error) {
 	return d.Dialer.Dial("unix", parts[0])
 }
 
-var unixTransport http.RoundTripper = &http.Transport{
+var UnixTransport http.RoundTripper = &http.Transport{
 	Dial: (&unixDialer{net.Dialer{
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,

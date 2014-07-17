@@ -1,8 +1,8 @@
 package main
 
-import "bitbucket.org/ulfurinn/blitz"
+import "bitbucket.org/ulfurinn/blitz/blizzard-lib"
 
 func main() {
-	m := blitz.NewMaster()
+	m := blizzard.NewMaster()
 	m.Run()
 }

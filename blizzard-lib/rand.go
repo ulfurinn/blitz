@@ -1,4 +1,4 @@
-package blitz
+package blizzard
 
 import (
 	"io"

@@ -1,4 +1,4 @@
-package blitz
+package blizzard
 
 import (
 	"bytes"
@@ -19,33 +19,14 @@ import (
 	"syscall"
 	"time"
 
+	"bitbucket.org/ulfurinn/blitz"
+
 	"github.com/GeertJohan/go.rice"
 )
 
 func fatal(err error) {
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)
-}
-
-type PathSpec struct {
-	Path    string `json:"path"`
-	Version int    `json:"version"`
-}
-
-type Command struct {
-	Type    string     `json:"type"`
-	Tag     string     `json:"tag"`
-	PID     int        `json:"pid"`
-	ProcID  string     `json:"procid"`
-	Patch   int64      `json:"patch"`
-	Paths   []PathSpec `json:"paths"`
-	Binary  string     `json:"binary"`
-	Network string     `json:"network"`
-	Address string     `json:"address"`
-}
-
-type Response struct {
-	Error string `json:"error"`
 }
 
 type SnapshotRoute struct {
@@ -96,7 +77,7 @@ type Instance struct {
 type InstanceSet map[*Instance]struct{}
 
 type masterRequest struct {
-	cmd  Command
+	cmd  blitz.Command
 	conn *WorkerConnection
 	ret  chan masterResponse
 }
@@ -273,7 +254,7 @@ func (m *Master) serveSnapshot(resp http.ResponseWriter, req *http.Request) {
 
 func (i *Instance) makeRevProxy() {
 	i.proxy = &httputil.ReverseProxy{
-		Transport: unixTransport,
+		Transport: blitz.UnixTransport,
 		Director: func(newreq *http.Request) {
 			newreq.URL.Scheme = "http"
 			newreq.URL.Host = i.Address
@@ -358,7 +339,7 @@ func (m *Master) ShutdownAndRemoveProcs(procs map[*Instance]struct{}) {
 	m.procs = remaining
 }
 
-func (m *Master) Announce(cmd Command, c *WorkerConnection) {
+func (m *Master) Announce(cmd blitz.Command, c *WorkerConnection) {
 	var proc *Instance
 	for _, p := range m.procs {
 		if p.id == cmd.ProcID {
@@ -449,7 +430,7 @@ func (m *Master) CollectUnusedBinaries() {
 	m.execs = remaining
 }
 
-func (m *Master) Mount(paths []PathSpec, proc *Instance) {
+func (m *Master) Mount(paths []blitz.PathSpec, proc *Instance) {
 	for _, path := range paths {
 		if len(path.Path) > 0 {
 			if path.Path[0] == '/' {
@@ -567,7 +548,7 @@ func (w *WorkerConnection) Run() {
 	defer w.closed()
 	decoder := json.NewDecoder(w.conn)
 	for {
-		v := Command{}
+		v := blitz.Command{}
 		err := decoder.Decode(&v)
 		if err != nil {
 			if err != io.EOF {
@@ -578,7 +559,7 @@ func (w *WorkerConnection) Run() {
 		ret := make(chan masterResponse, 1)
 		w.master.cmdCh <- masterRequest{cmd: v, conn: w, ret: ret}
 		resp := <-ret
-		clientResp := Response{}
+		clientResp := blitz.Response{}
 		if resp.err != nil {
 			clientResp.Error = resp.err.Error()
 		}
