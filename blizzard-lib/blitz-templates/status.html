@@ -78,7 +78,7 @@
                     <th>Name</th>
                 </tr>
                 {{ range .Execs }}
-                <tr>
+                <tr{{ if .Obsolete }} class="obsolete"{{ end }}>
                     <td>{{ .Exe }}</td>
                 </tr>
                 {{ end }}

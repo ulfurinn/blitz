@@ -59,6 +59,7 @@ type Master struct {
 type Executable struct {
 	Exe      string
 	Basename string
+	Obsolete bool
 }
 
 type Instance struct {
@@ -281,7 +282,8 @@ func (i *Instance) Shutdown() {
 
 func (e *Executable) release() {
 	//fmt.Printf("releasing executable %v\n", *e)
-	os.Rename(e.Exe, fmt.Sprintf("blitz/deploy-old/%s", e.Basename))
+	//os.Rename(e.Exe, fmt.Sprintf("blitz/deploy-old/%s", e.Basename))
+	e.Obsolete = true
 }
 
 func (m *Master) Loop() {
@@ -423,16 +425,11 @@ func (m *Master) CollectUnusedBinaries() {
 	for _, i := range m.procs {
 		usedBinaries[i.Exe] = struct{}{}
 	}
-	remaining := []*Executable{}
 	for _, e := range m.execs {
-		_, isUsed := usedBinaries[e]
-		if !isUsed {
+		if _, isUsed := usedBinaries[e]; !isUsed {
 			e.release()
-		} else {
-			remaining = append(remaining, e)
 		}
 	}
-	m.execs = remaining
 }
 
 func (m *Master) Mount(paths []blitz.PathSpec, proc *Instance) {
