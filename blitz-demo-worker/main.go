@@ -31,7 +31,9 @@ func main() {
 	w := blitz.Worker{
 		Patch:   i,
 		Handler: api(),
-		Paths:   []blitz.PathSpec{{Path: "/sleep", Version: 1}},
+		Paths: []blitz.PathSpec{
+			{Path: "/sleep", Version: 1},
+		},
 	}
 	err = w.Run()
 }
