@@ -6,7 +6,7 @@ type RoutingTable map[string]*Router
 
 type Router struct {
 	Path          string
-	routes        RoutingTable
+	routers       RoutingTable
 	handler       *Instance
 	requests      int64
 	totalRequests uint64
@@ -14,7 +14,7 @@ type Router struct {
 }
 
 func NewRouter() *Router {
-	return &Router{routes: make(RoutingTable)}
+	return &Router{routers: make(RoutingTable)}
 }
 
 func (r *Router) Mount(path []string, handler *Instance, prefix string) {
@@ -25,12 +25,12 @@ func (r *Router) Mount(path []string, handler *Instance, prefix string) {
 		return
 	}
 	first := path[0]
-	router, ok := r.routes[first]
+	router, ok := r.routers[first]
 	routePath := prefix + "/" + first
 	if !ok {
 		router = NewRouter()
 		router.Path = routePath
-		r.routes[first] = router
+		r.routers[first] = router
 	}
 	router.Mount(path[1:], handler, routePath)
 }
@@ -39,14 +39,14 @@ func (r *Router) Route(path []string) (handlingRouter *Router, handler *Instance
 	if len(path) == 0 || len(path) == 1 && path[0] == "" {
 		return r, r.handler
 	}
-	router, ok := r.routes[path[0]]
+	router, ok := r.routers[path[0]]
 	if ok {
 		handlingRouter, handler = router.Route(path[1:])
 	}
 	if handler != nil {
 		return
 	}
-	router, ok = r.routes["*"]
+	router, ok = r.routers["*"]
 	if ok {
 		handlingRouter, handler = router.Route(path[1:])
 	}
@@ -58,7 +58,7 @@ func (r *Router) UsedInstances() (result []*Instance) {
 	if r.handler != nil {
 		used[r.handler] = struct{}{}
 	}
-	for _, router := range r.routes {
+	for _, router := range r.routers {
 		for _, i := range router.UsedInstances() {
 			used[i] = struct{}{}
 		}
@@ -79,7 +79,7 @@ func (r *Router) snapshot() (result []*SnapshotRoute) {
 			Written:       atomic.LoadUint64(&r.written),
 		})
 	}
-	for _, router := range r.routes {
+	for _, router := range r.routers {
 		result = append(result, router.snapshot()...)
 	}
 	return
