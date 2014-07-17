@@ -410,7 +410,7 @@ func (m *Master) allUnusedInstances(used InstanceSet) (unused InstanceSet) {
 	unused = make(InstanceSet)
 	for _, i := range m.procs {
 		_, isUsed := used[i]
-		if !isUsed {
+		if !isUsed && i.Pid != 0 { // if pid is 0, we haven't received an announce yet
 			i.Obsolete = true
 			unused[i] = struct{}{}
 		}
