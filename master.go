@@ -168,21 +168,56 @@ func (m *Master) HTTP() {
 	}
 }
 
+type VersionStrategy interface {
+	Version(*http.Request) (int, []string, error)
+}
+
+type PathVersionStrategy struct{}
+
+func (PathVersionStrategy) Version(req *http.Request) (version int, path []string, err error) {
+	split := strings.Split(req.URL.Path[1:], "/")
+	if len(split) == 0 {
+		err = fmt.Errorf("No version provided")
+		return
+	}
+	_, err = fmt.Sscanf(split[0], "v%d", &version)
+	if err != nil {
+		err = fmt.Errorf("No version provided")
+		return
+	}
+	path = split[1:]
+	return
+}
+
+func concatPath(path []string) string {
+	var buf bytes.Buffer
+	for _, c := range path {
+		fmt.Fprint(&buf, "/", c)
+	}
+	return buf.String()
+}
+
 func (m *Master) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
-	path := req.URL.Path[1:]
-	switch path {
-	case "_blitz":
+	switch req.URL.Path {
+	case "/_blitz":
 		m.serveSnapshot(resp, req)
-	case "_blitz_ws":
+	case "/_blitz_ws":
 
 	default:
-		m.routeLock.RLock()
-		versionRouter, ok := m.routers[1]
-		if !ok {
-			resp.WriteHeader(404)
+		version, path, err := (PathVersionStrategy{}).Version(req)
+		if err != nil {
+			resp.WriteHeader(400)
+			fmt.Fprint(resp, err)
 			return
 		}
-		r, h := versionRouter.Route(strings.Split(path, "/"))
+		m.routeLock.RLock()
+		versionRouter, ok := m.routers[version]
+		if !ok {
+			resp.WriteHeader(400)
+			fmt.Fprintf(resp, "Version %d is not recognised", version)
+			return
+		}
+		r, h := versionRouter.Route(path)
 		// do this before unlocking so that the collector in announce will see it as busy
 		if h != nil {
 			atomic.AddInt64(&r.requests, 1)
@@ -199,6 +234,7 @@ func (m *Master) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 			atomic.AddInt64(&r.requests, -1)
 			atomic.AddInt64(&h.Requests, -1)
 		}()
+		req.Header.Set("X-Blitz-Path", concatPath(path))
 		h.ServeHTTP(resp, req)
 	}
 }
@@ -241,6 +277,7 @@ func (i *Instance) makeRevProxy() {
 		Director: func(newreq *http.Request) {
 			newreq.URL.Scheme = "http"
 			newreq.URL.Host = i.Address
+			newreq.URL.Path = newreq.Header.Get("X-Blitz-Path")
 		},
 	}
 }
@@ -296,7 +333,7 @@ func (m *Master) snapshot() *Snapshot {
 		s.Procs = append(s.Procs, i)
 	}
 	for v, router := range m.routers {
-		flat := router.snapshot("/")
+		flat := router.snapshot()
 		for _, r := range flat {
 			r.Version = v
 		}
@@ -425,7 +462,7 @@ func (m *Master) Mount(paths []PathSpec, proc *Instance) {
 			router = NewRouter()
 			m.routers[path.Version] = router
 		}
-		router.Mount(split, proc)
+		router.Mount(split, proc, "")
 	}
 }
 

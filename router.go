@@ -5,6 +5,7 @@ import "sync/atomic"
 type RoutingTable map[string]*Router
 
 type Router struct {
+	Path          string
 	routes        RoutingTable
 	handler       *Instance
 	requests      int64
@@ -15,7 +16,7 @@ func NewRouter() *Router {
 	return &Router{routes: make(RoutingTable)}
 }
 
-func (r *Router) Mount(path []string, handler *Instance) {
+func (r *Router) Mount(path []string, handler *Instance, prefix string) {
 	if len(path) == 0 || len(path) == 1 && path[0] == "" {
 		if r.handler == nil || r.handler.Patch <= handler.Patch {
 			r.handler = handler
@@ -24,11 +25,13 @@ func (r *Router) Mount(path []string, handler *Instance) {
 	}
 	first := path[0]
 	router, ok := r.routes[first]
+	routePath := prefix + "/" + first
 	if !ok {
 		router = NewRouter()
+		router.Path = routePath
 		r.routes[first] = router
 	}
-	router.Mount(path[1:], handler)
+	router.Mount(path[1:], handler, routePath)
 }
 
 func (r *Router) Route(path []string) (handlingRouter *Router, handler *Instance) {
@@ -65,23 +68,17 @@ func (r *Router) UsedInstances() (result []*Instance) {
 	return
 }
 
-func (r *Router) snapshot(root string) (result []*SnapshotRoute) {
+func (r *Router) snapshot() (result []*SnapshotRoute) {
 	if r.handler != nil {
 		result = append(result, &SnapshotRoute{
-			Path:          root,
+			Path:          r.Path,
 			Instance:      r.handler,
 			Requests:      atomic.LoadInt64(&r.requests),
 			TotalRequests: atomic.LoadUint64(&r.totalRequests),
 		})
 	}
-	for component, router := range r.routes {
-		var newroot string
-		if root == "/" {
-			newroot = root + component
-		} else {
-			newroot = root + "/" + component
-		}
-		result = append(result, router.snapshot(newroot)...)
+	for _, router := range r.routes {
+		result = append(result, router.snapshot()...)
 	}
 	return
 }
