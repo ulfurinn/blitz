@@ -30,3 +30,13 @@ func fatal(err error) {
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)
 }
+
+func CreateDirectoryStructure() {
+	os.MkdirAll("blitz", os.ModeDir|0775)
+	os.MkdirAll("blitz/deploy", os.ModeDir|0775)
+	os.MkdirAll("blitz/deploy-old", os.ModeDir|0775)
+}
+
+func ControlAddress() string {
+	return "blitz/ctl"
+}

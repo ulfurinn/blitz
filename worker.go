@@ -40,7 +40,7 @@ func (w *Worker) Run() (err error) {
 }
 
 func (w *Worker) init() (err error) {
-	os.MkdirAll("blitz", os.ModeDir|0775)
+	CreateDirectoryStructure()
 	err = w.listen()
 	if err != nil {
 		return
@@ -50,7 +50,7 @@ func (w *Worker) init() (err error) {
 }
 
 func (w *Worker) connect() (err error) {
-	conn, err := net.Dial("unix", "blitz/ctl")
+	conn, err := net.Dial("unix", ControlAddress())
 	if err != nil {
 		return
 	}

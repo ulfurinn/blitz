@@ -7,7 +7,7 @@ type RoutingTable map[string]*Router
 type Router struct {
 	Path          string
 	routers       RoutingTable
-	handler       *Instance
+	handler       *Process
 	requests      int64
 	totalRequests uint64
 	written       uint64
@@ -17,7 +17,7 @@ func NewRouter() *Router {
 	return &Router{routers: make(RoutingTable)}
 }
 
-func (r *Router) Mount(path []string, handler *Instance, prefix string) {
+func (r *Router) Mount(path []string, handler *Process, prefix string) {
 	if len(path) == 0 || len(path) == 1 && path[0] == "" {
 		if r.handler == nil || r.handler.Patch <= handler.Patch {
 			r.handler = handler
@@ -35,7 +35,7 @@ func (r *Router) Mount(path []string, handler *Instance, prefix string) {
 	router.Mount(path[1:], handler, routePath)
 }
 
-func (r *Router) Unmount(proc *Instance) {
+func (r *Router) Unmount(proc *Process) {
 	routers := make(RoutingTable)
 	for key, router := range r.routers {
 		if router.handler != proc {
@@ -49,7 +49,7 @@ func (r *Router) Unmount(proc *Instance) {
 	r.routers = routers
 }
 
-func (r *Router) Route(path []string) (handlingRouter *Router, handler *Instance) {
+func (r *Router) Route(path []string) (handlingRouter *Router, handler *Process) {
 	if len(path) == 0 || len(path) == 1 && path[0] == "" {
 		return r, r.handler
 	}
@@ -67,8 +67,8 @@ func (r *Router) Route(path []string) (handlingRouter *Router, handler *Instance
 	return
 }
 
-func (r *Router) UsedInstances() (result []*Instance) {
-	used := make(map[*Instance]struct{})
+func (r *Router) UsedInstances() (result []*Process) {
+	used := make(map[*Process]struct{})
 	if r.handler != nil {
 		used[r.handler] = struct{}{}
 	}
@@ -87,7 +87,7 @@ func (r *Router) snapshot() (result []*SnapshotRoute) {
 	if r.handler != nil {
 		result = append(result, &SnapshotRoute{
 			Path:          r.Path,
-			Instance:      r.handler,
+			Process:       r.handler,
 			Requests:      atomic.LoadInt64(&r.requests),
 			TotalRequests: atomic.LoadUint64(&r.totalRequests),
 			Written:       atomic.LoadUint64(&r.written),
