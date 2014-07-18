@@ -8,6 +8,6 @@ import (
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	m := blizzard.NewMaster()
-	m.Run()
+	m := blizzard.NewBlizzard()
+	m.Start()
 }

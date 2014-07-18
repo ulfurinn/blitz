@@ -2,28 +2,27 @@ package blitz
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"net"
 	"net/http"
+	"syscall"
 
 	"os"
 	"os/signal"
 )
 
-var procID string
-
-func init() {
-	flag.StringVar(&procID, "blitz-proc-id", "", "internal process ID")
-}
+var tag string
+var bootstrap bool
 
 type Worker struct {
-	conn     net.Conn
-	socket   string
-	listener net.Listener
-	Patch    int64
-	Handler  http.Handler
-	Paths    []PathSpec
+	conn      net.Conn
+	socket    string
+	listener  net.Listener
+	AppName   string
+	Patch     int64
+	Handler   http.Handler
+	Paths     []PathSpec
+	Bootstrap Bootstrapper
 }
 
 func (w *Worker) Run() (err error) {
@@ -31,6 +30,20 @@ func (w *Worker) Run() (err error) {
 	if err != nil {
 		return
 	}
+	if bootstrap {
+		err = w.bootstrap()
+		w.cleanup()
+		return
+	}
+	err = w.listen()
+	if err != nil {
+		return
+	}
+
+	ch := make(chan os.Signal)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	go w.waitForCleanup(ch)
+
 	err = w.announce(w.Paths)
 	if err != nil {
 		return
@@ -41,10 +54,6 @@ func (w *Worker) Run() (err error) {
 
 func (w *Worker) init() (err error) {
 	CreateDirectoryStructure()
-	err = w.listen()
-	if err != nil {
-		return
-	}
 	err = w.connect()
 	return
 }
@@ -65,21 +74,20 @@ func (w *Worker) listen() (err error) {
 		return
 	}
 	w.listener = listener
-	ch := make(chan os.Signal)
-	signal.Notify(ch, os.Interrupt, os.Kill)
-	go w.cleanup(ch)
 	return
 }
 
-func (w *Worker) cleanup(ch chan os.Signal) {
+func (w *Worker) waitForCleanup(ch chan os.Signal) {
 	<-ch
-	err := w.listener.Close()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	w.cleanup()
+}
+
+func (w *Worker) cleanup() {
+	if w.listener != nil {
+		w.listener.Close()
 	}
-	err = w.conn.Close()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if w.conn != nil {
+		w.conn.Close()
 	}
 	os.Exit(0)
 }
@@ -89,11 +97,25 @@ func (w *Worker) send(data interface{}) error {
 	return encoder.Encode(data)
 }
 
+func (w *Worker) bootstrap() error {
+	cmd := BootstrapCommand{}
+	cmd.Type = "bootstrap"
+	cmd.AppName = w.AppName
+	cmd.BinaryTag = tag
+	err := w.Bootstrap(&cmd)
+	if err != nil {
+		return err
+	}
+	if cmd.Instances == 0 {
+		cmd.Instances = 1
+	}
+	return w.send(cmd)
+}
+
 func (w *Worker) announce(spec []PathSpec) error {
-	a := Command{}
+	a := AnnounceCommand{}
 	a.Type = "announce"
-	a.ProcID = procID
-	a.PID = os.Getpid()
+	a.ProcTag = tag
 	a.Network = "unix"
 	a.Address = w.socket
 	a.Patch = w.Patch

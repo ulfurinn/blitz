@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -22,7 +21,8 @@ func fatal(err error) {
 }
 
 func main() {
-	flag.Parse()
+	fmt.Println("worker boot")
+	blitz.InitWorker()
 	fmt.Println(patch)
 	i, err := strconv.ParseInt(patch, 10, 0)
 	if err != nil {
@@ -33,18 +33,34 @@ func main() {
 		Handler: api(),
 		Paths: []blitz.PathSpec{
 			{Path: "/sleep", Version: 1},
+			{Path: "/ok", Version: 1},
 		},
+		Bootstrap: bootstrapper,
 	}
 	err = w.Run()
+	if err != nil {
+		fatal(err)
+	}
+}
+
+func bootstrapper(cmd *blitz.BootstrapCommand) error {
+	cmd.Instances = 1
+	cmd.AppName = "demo-worker"
+	return nil
 }
 
 func api() http.Handler {
 	m := martini.Classic()
-	m.Get("/sleep", demo)
+	m.Get("/ok", ok)
+	m.Get("/sleep", sleep)
 	return m
 }
 
-func demo() (int, string) {
+func ok() (int, string) {
+	return 200, "blitz!"
+}
+
+func sleep() (int, string) {
 	time.Sleep(10 * time.Second)
 	return 200, "blitz!"
 }

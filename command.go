@@ -32,13 +32,9 @@ func (c *Cli) Run() {
 	app.Run(os.Args)
 }
 
-func (c *Cli) Connect() error {
-	conn, err := net.Dial("unix", "blitz/ctl")
-	if err != nil {
-		return err
-	}
-	c.conn = conn
-	return nil
+func (c *Cli) Connect() (err error) {
+	c.conn, err = net.Dial("unix", "blitz/ctl")
+	return
 }
 
 func (c *Cli) GetResponse() {
@@ -48,21 +44,21 @@ func (c *Cli) GetResponse() {
 	if err != nil {
 		fatal(err)
 	}
-	if v.Error != "" {
-		fatal(fmt.Errorf(v.Error))
+	if v.Error != nil {
+		fatal(v.Error)
 	}
 }
 
 func (c *Cli) Deploy(ctx *cli.Context) {
 	args := ctx.Args()
-	if len(args) != 1 {
+	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "file name required")
 		return
 	}
-	binary := args[0]
-	cmd := Command{
-		Type:   "deploy",
-		Binary: binary,
+	executable := args[0]
+	cmd := DeployCommand{
+		Command:    Command{Type: "deploy"},
+		Executable: executable,
 	}
 	err := c.send(cmd)
 	if err != nil {

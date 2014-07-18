@@ -1,281 +1,150 @@
 package blizzard
 
 import (
-	"bytes"
 	"fmt"
 	"html/template"
 	"io"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"bitbucket.org/ulfurinn/blitz"
-
-	"github.com/GeertJohan/go.rice"
 )
 
-func fatal(err error) {
-	fmt.Fprintln(os.Stderr, err)
-	os.Exit(1)
+type Blizzard struct {
+	*BlizzardCh `gen_proc:"gen_server"`
+	static      *assetServer
+	routers     *RouteSet
+	execs       []*Executable
+	procGroups  []*ProcGroup
+	server      *http.Server
+	tpl         *template.Template
+	tplErr      error
+	cleanup     *time.Timer
 }
 
-type Master struct {
-	execs              []*Executable
-	procs              []*Process
-	scheduledRemoval   ProcessSet
-	routers            map[int]*Router
-	routeLock          *sync.RWMutex
-	cmdCh              chan masterRequest
-	snapshotCh         chan chan *Snapshot
-	connectionClosedCh chan *WorkerConnection
-	templateCh         chan chan TemplateResponse
-	server             *http.Server
+type workerCommand struct {
+	command interface{}
+	*WorkerConnection
 }
 
-type masterRequest struct {
-	cmd  blitz.Command
-	conn *WorkerConnection
-	ret  chan masterResponse
-}
+type SpawnedCallback func(*ProcGroup)
 
-type masterResponse struct {
-	err error
-}
-
-func randstr(n int64) string {
-	b := &bytes.Buffer{}
-	io.CopyN(b, NewRand(), n)
-	return string(b.Bytes())
-}
-
-func NewMaster() *Master {
-	return &Master{
-		routers:            make(map[int]*Router),
-		routeLock:          &sync.RWMutex{},
-		cmdCh:              make(chan masterRequest),
-		snapshotCh:         make(chan chan *Snapshot),
-		connectionClosedCh: make(chan *WorkerConnection),
-		templateCh:         make(chan chan TemplateResponse),
-		scheduledRemoval:   make(ProcessSet),
+func NewBlizzard() *Blizzard {
+	b := &Blizzard{
+		BlizzardCh: NewBlizzardCh(),
+		routers:    NewRouteSet(),
 	}
+	static, err := NewAssetServer(b)
+	if err != nil {
+		fatal(err)
+	}
+	b.static = static
+	return b
 }
 
-func (m *Master) Run() {
+func (b *Blizzard) Start() {
 	blitz.CreateDirectoryStructure()
 	listener, err := net.Listen("unix", blitz.ControlAddress())
 	if err != nil {
 		fatal(err)
 	}
 	closeSocketOnShutdown(listener)
-	go m.HTTP()
-	go m.Loop()
-	err = m.BootAllDeployed()
-	if err != nil {
-		fatal(err)
-	}
-	m.ProcessControl(listener)
+	go b.HTTP()
+	go b.Run()
+	go b.static.HTTP()
+	go b.static.Run()
+	// err = b.bootAllDeployed()
+	// if err != nil {
+	// 	fatal(err)
+	// }
+	b.cleanup = time.NewTimer(time.Second)
+	b.cleanup.Stop()
+	go func() {
+		for {
+			<-b.cleanup.C
+			b.Cleanup()
+		}
+	}()
+	b.processControl(listener)
 }
 
-func (m *Master) HTTP() {
-	m.server = &http.Server{
+func (b *Blizzard) HTTP() {
+	b.server = &http.Server{
 		Addr:    ":8080",
-		Handler: m,
+		Handler: b,
 	}
-	err := m.server.ListenAndServe()
+	err := b.server.ListenAndServe()
 	if err != nil {
 		fatal(err)
 	}
 }
 
-func (m *Master) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
-	switch req.URL.Path {
-	case "/_blitz":
-		m.serveSnapshot(resp, req)
-	case "/_blitz_ws":
+var globalCounter uint64 = 0
 
-	default:
-		m.BlitzDispatch(resp, req)
+func (b *Blizzard) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+
+	var serve http.HandlerFunc
+
+	b.routers.reading(func() {
+		serve = b.routers.ServeHTTP(resp, req)
+	})
+
+	if serve != nil {
+		serve(resp, req)
 	}
+
 }
 
-func (m *Master) Loop() {
-	var tpl *template.Template
-	t := time.NewTicker(time.Second)
+func (b *Blizzard) processControl(listener net.Listener) {
 	for {
-		select {
-		case cmd := <-m.cmdCh:
-			m.handleCommand(cmd)
-		case <-t.C:
-			m.cleanupInstances(m.scheduledRemoval)
-		case ret := <-m.snapshotCh:
-			ret <- m.snapshot()
-		case w := <-m.connectionClosedCh:
-			m.connectionClosed(w)
-		case ret := <-m.templateCh:
-			resp := TemplateResponse{}
-			if tpl == nil {
-				box, err := rice.FindBox("blitz-templates")
-				if err != nil {
-					resp.err = err
-					ret <- resp
-					break
-				}
-				src, err := box.String("status.html")
-				if err != nil {
-					resp.err = err
-					ret <- resp
-					break
-				}
-				tpl, err = template.New("status").Parse(src)
-				if err != nil {
-					resp.err = err
-					ret <- resp
-					break
-				}
-			}
-			resp.tpl = tpl
-			ret <- resp
+		conn, err := listener.Accept()
+		if err != nil {
+			fatal(err)
 		}
+		worker := &WorkerConnection{conn: conn, server: b}
+		go worker.Run()
 	}
 }
 
-func (m *Master) ShutdownAndRemoveProcs(procs map[*Process]struct{}) {
-	if len(procs) == 0 {
+func (b *Blizzard) handleCommand(cmd workerCommand) (resp blitz.Response) {
+	switch command := cmd.command.(type) {
+	case blitz.AnnounceCommand:
+		b.announce(command, cmd.WorkerConnection)
+		return
+	case blitz.DeployCommand:
+		resp.Error = b.deploy(command)
+		log("[blizzard] deployed: %v\n", resp)
+		return
+	case blitz.BootstrapCommand:
+		b.bootstrapped(command)
+		return
+	default:
 		return
 	}
-	remaining := []*Process{}
-	for _, i := range m.procs {
-		_, removable := procs[i]
-		if removable {
-			i.Shutdown()
-		} else {
-			remaining = append(remaining, i)
-		}
-	}
-	m.procs = remaining
 }
 
-func (m *Master) Announce(cmd blitz.Command, c *WorkerConnection) {
-	var proc *Process
-	for _, p := range m.procs {
-		if p.id == cmd.ProcID {
-			proc = p
-			break
-		}
-	}
+func (b *Blizzard) announce(cmd blitz.AnnounceCommand, worker *WorkerConnection) {
+	procGroup, proc := b.findProcByTag(cmd.ProcTag)
 	if proc == nil {
+		log("[blizzard] no matching proc found for tag %s\n", cmd.ProcTag)
 		return
 	}
-	proc.makeRevProxy()
-	proc.id = "" // not needed anymore
-	proc.connection = c
-	proc.Pid = cmd.PID
-	proc.Patch = cmd.Patch
-	proc.network = cmd.Network
-	proc.Address = cmd.Address
-	m.routeLock.Lock()
-	defer m.routeLock.Unlock()
-	m.Mount(cmd.Paths, proc)
-	m.CollectUnusedInstances()
+	log("[blizzard] announce from proc group %p proc %p pid %d\n", procGroup, proc, proc.cmd.Process.Pid)
+	worker.monitor = b
+	procGroup.Announced(proc, cmd, worker)
+	//	TODO; what to do in case of patch mismatch?
 }
 
-func (m *Master) allMountedInstances() (used ProcessSet) {
-	used = make(ProcessSet)
-	for _, router := range m.routers {
-		for _, i := range router.UsedInstances() {
-			used[i] = struct{}{}
-		}
-	}
-	return
-}
-
-func (m *Master) allUnusedInstances(used ProcessSet) (unused ProcessSet) {
-	unused = make(ProcessSet)
-	for _, i := range m.procs {
-		_, isUsed := used[i]
-		if !isUsed && i.Pid != 0 { // if pid is 0, we haven't received an announce yet
-			i.Obsolete = true
-			unused[i] = struct{}{}
-		}
-	}
-	return
-}
-
-func (m *Master) partitionUnusedInstances(unused ProcessSet) (immediate, scheduled ProcessSet) {
-	immediate = make(ProcessSet)
-	scheduled = make(ProcessSet)
-	for i, _ := range unused {
-		if i.dead || atomic.LoadInt64(&i.Requests) == 0 {
-			immediate[i] = struct{}{}
-		} else {
-			scheduled[i] = struct{}{}
-		}
-	}
-	return
-}
-
-func (m *Master) CollectUnusedInstances() {
-	used := m.allMountedInstances()
-	unused := m.allUnusedInstances(used)
-	m.cleanupInstances(unused)
-}
-
-func (m *Master) cleanupInstances(unused ProcessSet) {
-	immediate, scheduled := m.partitionUnusedInstances(unused)
-	m.ShutdownAndRemoveProcs(immediate)
-	m.scheduledRemoval = scheduled
-	if len(immediate) > 0 {
-		m.CollectUnusedBinaries()
-	}
-}
-
-func (m *Master) CollectUnusedBinaries() {
-	usedBinaries := make(map[*Executable]struct{})
-	for _, i := range m.procs {
-		usedBinaries[i.Exe] = struct{}{}
-	}
-	for _, e := range m.execs {
-		if _, isUsed := usedBinaries[e]; !isUsed {
-			e.release()
-		}
-	}
-}
-
-func (m *Master) Mount(paths []blitz.PathSpec, proc *Process) {
-	for _, path := range paths {
-		if len(path.Path) > 0 {
-			if path.Path[0] == '/' {
-				path.Path = path.Path[1:]
-			}
-		}
-		split := strings.Split(path.Path, "/")
-		router, ok := m.routers[path.Version]
-		if !ok {
-			router = NewRouter()
-			m.routers[path.Version] = router
-		}
-		router.Mount(split, proc, "")
-	}
-}
-
-func (m *Master) Unmount(proc *Process) {
-	for _, r := range m.routers {
-		r.Unmount(proc)
-	}
-}
-
-func (m *Master) Deploy(exe string) error {
-	components := strings.Split(exe, string(os.PathSeparator))
+func (b *Blizzard) deploy(cmd blitz.DeployCommand) error {
+	components := strings.Split(cmd.Executable, string(os.PathSeparator))
 	basename := components[len(components)-1]
 	deployedName := fmt.Sprintf("%s.blitz%d", basename, time.Now().Unix())
 	newname := fmt.Sprintf("blitz/deploy/%s", deployedName)
-	origin, err := os.Open(exe)
+	origin, err := os.Open(cmd.Executable)
 	if err != nil {
 		return err
 	}
@@ -291,40 +160,206 @@ func (m *Master) Deploy(exe string) error {
 	if err != nil {
 		return err
 	}
+	err = newfile.Close()
+	if err != nil {
+		return err
+	}
 
-	return m.BootDeployed(newname)
+	return b.bootstrap(newname)
 }
 
-func (m *Master) BootAllDeployed() error {
-	return filepath.Walk("blitz/deploy", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && info.Mode().Perm()&0111 > 0 {
-			err := m.BootDeployed(path)
-			if err != nil {
-				return err
+func (b *Blizzard) bootstrap(command string) error {
+	e := &Executable{Exe: command, Basename: filepath.Base(command), server: b}
+	b.execs = append(b.execs, e)
+	return e.bootstrap()
+}
+
+func (b *Blizzard) bootstrapped(cmd blitz.BootstrapCommand) {
+	e := b.findExeByTag(cmd.BinaryTag)
+	if e == nil {
+		log("[blizzard] no matching binary for tag %s\n", cmd.BinaryTag)
+		return
+	}
+	log("[blizzard] bootstrapped %p: %d instances of %s\n", e, cmd.Instances, cmd.AppName)
+	e.Instances = cmd.Instances
+	e.AppName = cmd.AppName
+	pg, err := e.spawn(b.mount)
+	if err == nil {
+		b.procGroups = append(b.procGroups, pg)
+	} else {
+		log("[blizzard] while spawning: %v\n, err")
+	}
+}
+
+func (b *Blizzard) mount(proc *ProcGroup) {
+	log("[blizzard] mounting proc %p\n", proc)
+	b.routers.writing(func() {
+		for _, path := range proc.paths {
+			if len(path.Path) > 0 {
+				if path.Path[0] == '/' {
+					path.Path = path.Path[1:]
+				}
 			}
+			split := strings.Split(path.Path, "/")
+			router := b.routers.forVersion(path.Version, true)
+			router.Mount(split, proc, "")
 		}
-		return nil
+		b.scheduleCleanup()
 	})
 }
 
-func (m *Master) BootDeployed(exe string) error {
-	id := randstr(32)
-	e := &Executable{Exe: exe, Basename: filepath.Base(exe)}
-	i := &Process{Exe: e, id: id}
-	m.execs = append(m.execs, e)
-	m.procs = append(m.procs, i)
-	i.cmd = exec.Command(exe, "--blitz-proc-id", id)
-	err := i.cmd.Start()
-	return err
+// func (b *Blizzard) bootAllDeployed() error {
+// 	return filepath.Walk("blitz/deploy", func(path string, info os.FileInfo, err error) error {
+// 		if err != nil {
+// 			return err
+// 		}
+// 		if !info.IsDir() && info.Mode().Perm()&0111 > 0 {
+// 			err := b.bootDeployed(path, 1)
+// 			if err != nil {
+// 				return err
+// 			}
+// 		}
+// 		return nil
+// 	})
+// }
+
+func (b *Blizzard) findExeByTag(tag string) *Executable {
+	for _, e := range b.execs {
+		if e.Tag == tag {
+			return e
+		}
+	}
+	return nil
 }
 
-func (m *Master) PrintProcList() {
-	pids := []int{}
-	for _, i := range m.procs {
-		pids = append(pids, i.Pid)
+func (b *Blizzard) findProcByTag(tag string) (group *ProcGroup, proc *Process) {
+	for _, pg := range b.procGroups {
+		for _, p := range pg.Procs {
+			if p.tag == tag {
+				group = pg
+				proc = p
+				return
+			}
+		}
+		for _, p := range pg.PendingProcs {
+			if p.tag == tag {
+				group = pg
+				proc = p
+				return
+			}
+		}
 	}
-	fmt.Println(pids)
+	return
+}
+
+func (b *Blizzard) findProcByConnection(w *WorkerConnection) (group *ProcGroup, proc *Process) {
+out:
+	for _, pg := range b.procGroups {
+		for _, p := range pg.Procs {
+			if p.connection == w {
+				group = pg
+				proc = p
+				break out
+			}
+		}
+	}
+	return
+}
+
+func findProcGroup(p *ProcGroup, list []*ProcGroup) (index int, found bool) {
+	for i, pr := range list {
+		if pr == p {
+			index = i
+			found = true
+			return
+		}
+	}
+	return
+}
+
+func removeProcGroup(index int, list []*ProcGroup) (result []*ProcGroup) {
+	list[index] = nil
+	result = append(result, list[:index]...)
+	result = append(result, list[index+1:]...)
+	return
+}
+
+func (b *Blizzard) removeGroup(pg *ProcGroup) {
+	b.routers.writing(func() {
+		log("[blizzard] removing proc group %p\n", pg)
+		b.unmount(pg)
+		index, found := findProcGroup(pg, b.procGroups)
+		if found {
+			b.procGroups = removeProcGroup(index, b.procGroups)
+		}
+		b.scheduleCleanup()
+	})
+}
+
+func (b *Blizzard) unmount(proc *ProcGroup) {
+	for _, r := range b.routers.routers {
+		r.Unmount(proc)
+	}
+}
+
+func (b *Blizzard) scheduleCleanup() {
+	b.cleanup.Reset(10 * time.Millisecond)
+}
+
+func (b *Blizzard) handleCleanup() {
+	b.routers.writing(func() {
+		used := b.routers.UsedInstances()
+		unused := b.unusedHandlers(used)
+		for pg := range unused {
+			log("[blizzard] shutting down unused proc group %p\n", pg)
+			pg.Shutdown()
+		}
+	})
+	return
+}
+
+func (b *Blizzard) unusedHandlers(used ProgGroupSet) (result ProgGroupSet) {
+	result = make(ProgGroupSet)
+	for _, pg := range b.procGroups {
+		if _, isUsed := used[pg]; !isUsed {
+			result[pg] = struct{}{}
+		}
+	}
+	return
+}
+
+func (b *Blizzard) handleWorkerClosed(w *WorkerConnection) {
+	pg, i := b.findProcByConnection(w)
+	if i == nil {
+		return
+	}
+	pg.Remove(i)
+}
+
+func (b *Blizzard) handleSnapshot(f func(interface{})) {
+	// for _, e := range b.execs {
+	// 	s.Execs = append(s.Execs, e)
+	// }
+	// for _, i := range b.procGroups {
+	// 	s.Procs = append(s.Procs, i)
+	// }
+	// for v, router := range b.routers.routers {
+	// 	flat := router.snapshot()
+	// 	for _, r := range flat {
+	// 		r.Version = v
+	// 	}
+	// 	s.Routes = append(s.Routes, flat...)
+	// }
+	b.routers.reading(func() {
+		for v, router := range b.routers.routers {
+			flat := router.snapshot()
+			for _, r := range flat {
+				r.Version = v
+				f(map[string]interface{}{"type": "add-route", "data": r})
+			}
+		}
+	})
+	for _, pg := range b.procGroups {
+		f(map[string]interface{}{"type": "add-proc-group", "data": pg})
+	}
 }

@@ -10,24 +10,36 @@ import (
 )
 
 type Process struct {
-	Exe              *Executable
+	*ProcessGen      `gen_proc:"gen_server"`
+	group            *ProcGroup
 	connection       *WorkerConnection
-	id               string
-	Pid              int
-	Patch            int64
+	tag              string
 	network, Address string
 	proxy            http.Handler
 	Requests         int64
 	TotalRequests    uint64
 	Written          uint64
 	Obsolete         bool
-	dead             bool
 	cmd              *exec.Cmd
 }
 
-type ProcessSet map[*Process]struct{}
+type ProcessSet map[*ProcGroup]struct{}
+
+type serveRequest struct {
+	resp   http.ResponseWriter
+	req    *http.Request
+	served chan struct{}
+}
+
+func (i *Process) Exec() error {
+	i.cmd = exec.Command(i.group.exe.Exe, "--tag", i.tag)
+	return i.cmd.Start()
+}
 
 func (i *Process) makeRevProxy() {
+	if i.proxy != nil {
+		return
+	}
 	i.proxy = &httputil.ReverseProxy{
 		Transport: blitz.UnixTransport,
 		Director: func(newreq *http.Request) {
@@ -42,12 +54,17 @@ func (i *Process) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	i.proxy.ServeHTTP(resp, req)
 }
 
-func (i *Process) Shutdown() {
-	if i.dead {
-		return
+func (i *Process) handleShutdown() {
+	if i.cmd != nil {
+		log("[proc %p] shutting down process %d\n", i, i.cmd.Process.Pid)
+		i.cmd.Process.Signal(syscall.SIGTERM)
 	}
-	//fmt.Printf("releasing instance %v\n", *i)
-	//i.connection.conn.Close()
-	syscall.Kill(i.Pid, syscall.SIGINT)
-	i.cmd.Wait()
+}
+
+func (i *Process) handleCleanupProcess() {
+	if i.cmd != nil {
+		log("[proc %p] collecting process %d\n", i, i.cmd.Process.Pid)
+		i.cmd.Wait()
+		i.cmd = nil
+	}
 }

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html ng-app="blizzard">
+    <head>
+        <title>blizzard status</title>
+        <script src="angular.min.js"></script>
+        <script src="blizzard.js"></script>
+        <link rel="stylesheet" href="blizzard.css" type="text/css">
+    </head>
+    <body ng-controller="BlizzardCtl">
+        <div ng-switch on="wsOn">
+            <div ng-switch-when="true" class="ws-on">control connection is up</div>
+            <div ng-switch-default class="ws-off">control connection is down</div>
+        </div>
+        <div ng-class="{hidden: !wsOn}">
+            <div id="routes">
+                <h1>Routes</h1>
+                <table>
+                    <tr>
+                        <th>Path</th>
+                        <th>Current requests</th>
+                        <th>Total requests</th>
+                        <th>Total written</th>
+                    </tr>
+                    <tr ng-repeat="route in routes track by $index">
+                        <td>/v{{route.Version}}{{route.Path}}</td>
+                        <td class="table-number">{{route.Requests}}</td>
+                        <td class="table-number">{{route.TotalRequests}}</td>
+                        <td class="table-number">{{route.Written}}</td>
+                    </tr>
+                </table>
+            </div>
+            <div id="procs"><h1>Procs</h1></div>
+                <table>
+                    <tr>
+                        <th>Patch</th>
+                        <th>Current requests</th>
+                        <th>Total requests</th>
+                        <th>Total written</th>
+                        <th>Instances</th>
+                    </tr>
+                    <tr ng-repeat="pg in procGroups track by $index">
+                        <td class="table-number">{{pg.Patch}}</td>
+                        <td class="table-number">{{pg.Requests}}</td>
+                        <td class="table-number">{{pg.TotalRequests}}</td>
+                        <td class="table-number">{{pg.Written}}</td>
+                        <td ng-repeat="i in pg.Procs track by $index">
+                            <div>{{i.Address}}</div>
+                        </td>
+                    </tr>
+                </table>
+            <div id="execs"><h1>Executables</h1></div>
+        </div>
+    </body>
+</html>
