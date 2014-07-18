@@ -422,7 +422,7 @@ func (m *Master) partitionUnusedInstances(unused InstanceSet) (immediate, schedu
 	immediate = make(InstanceSet)
 	scheduled = make(InstanceSet)
 	for i, _ := range unused {
-		if atomic.LoadInt64(&i.Requests) == 0 {
+		if i.dead || atomic.LoadInt64(&i.Requests) == 0 {
 			immediate[i] = struct{}{}
 		} else {
 			scheduled[i] = struct{}{}
