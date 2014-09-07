@@ -146,36 +146,41 @@ func (b *Blizzard) announce(cmd blitz.AnnounceCommand, worker *WorkerConnection)
 }
 
 func (b *Blizzard) deploy(cmd blitz.DeployCommand) error {
-	components := strings.Split(cmd.Executable, string(os.PathSeparator))
-	basename := components[len(components)-1]
-	deployedName := fmt.Sprintf("%s.blitz%d", basename, time.Now().Unix())
-	newname := fmt.Sprintf("blitz/deploy/%s", deployedName)
-	origin, err := os.Open(cmd.Executable)
-	if err != nil {
-		return err
-	}
-	newfile, err := os.Create(newname)
-	if err != nil {
-		return err
-	}
-	err = os.Chmod(newname, 0775)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(newfile, origin)
-	if err != nil {
-		return err
-	}
-	err = newfile.Close()
-	if err != nil {
-		return err
+
+	e := &Executable{server: b}
+
+	if cmd.Executable != "" {
+		components := strings.Split(cmd.Executable, string(os.PathSeparator))
+		basename := components[len(components)-1]
+		deployedName := fmt.Sprintf("%s.blitz%d", basename, time.Now().Unix())
+		command := fmt.Sprintf("blitz/deploy/%s", deployedName)
+		origin, err := os.Open(cmd.Executable)
+		if err != nil {
+			return err
+		}
+		newfile, err := os.Create(command)
+		if err != nil {
+			return err
+		}
+		err = os.Chmod(command, 0775)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(newfile, origin)
+		if err != nil {
+			return err
+		}
+		err = newfile.Close()
+		if err != nil {
+			return err
+		}
+		e.Exe = command
+		e.Basename = filepath.Base(command)
+	} else {
+		e.Adapter = cmd.Adapter
+		e.Config = cmd.Config
 	}
 
-	return b.bootstrap(newname)
-}
-
-func (b *Blizzard) bootstrap(command string) error {
-	e := &Executable{Exe: command, Basename: filepath.Base(command), server: b}
 	b.execs = append(b.execs, e)
 	return e.bootstrap()
 }

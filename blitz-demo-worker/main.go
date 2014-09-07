@@ -29,24 +29,19 @@ func main() {
 		fatal(err)
 	}
 	w := blitz.Worker{
+		AppName: "demo-worker",
 		Patch:   i,
-		Handler: api(),
 		Paths: []blitz.PathSpec{
 			{Path: "/sleep", Version: 1},
 			{Path: "/ok", Version: 1},
 		},
-		Bootstrap: bootstrapper,
+		Run: blitz.StandardRunner,
 	}
-	err = w.Run()
+	err = w.Start()
 	if err != nil {
 		fatal(err)
 	}
-}
-
-func bootstrapper(cmd *blitz.BootstrapCommand) error {
-	cmd.Instances = 1
-	cmd.AppName = "demo-worker"
-	return nil
+	w.Wait()
 }
 
 func api() http.Handler {

@@ -1,0 +1,8 @@
+---
+servers: 4
+blitz:
+  app_name: thin demo
+  mount:
+    - version: 1
+      paths: ["/test"]
+  patch: 4800

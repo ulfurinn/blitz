@@ -4,6 +4,8 @@ import "os/exec"
 
 type Executable struct {
 	Exe          string
+	Adapter      string
+	Config       string
 	Basename     string
 	Tag          string
 	AppName      string
@@ -21,7 +23,9 @@ func (e *Executable) release() {
 
 func (e *Executable) bootstrap() error {
 	e.Tag = randstr(32)
-	e.BootstrapCmd = exec.Command(e.Exe, "-bootstrap", "-tag", e.Tag)
+	args := []string{"-bootstrap", "-tag", e.Tag}
+	args = append(args, e.args()...)
+	e.BootstrapCmd = exec.Command(e.executable(), args...)
 	err := e.BootstrapCmd.Start()
 	if err == nil {
 		go e.BootstrapCmd.Wait()
@@ -34,4 +38,18 @@ func (e *Executable) spawn(cb SpawnedCallback) (pg *ProcGroup, err error) {
 	go pg.Run()
 	err = pg.Spawn(e.Instances, cb)
 	return
+}
+
+func (e *Executable) executable() string {
+	if e.Exe != "" {
+		return e.Exe
+	}
+	return "blitz-adapter-" + e.Adapter
+}
+
+func (e *Executable) args() []string {
+	if e.Exe != "" {
+		return []string{}
+	}
+	return []string{"-config", e.Config}
 }

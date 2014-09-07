@@ -29,7 +29,8 @@ type BootstrapCommand struct {
 	AppName   string `json:"appName"`
 }
 
-type Bootstrapper func(*BootstrapCommand) error
+type Bootstrapper func(*Worker, *BootstrapCommand) error
+type Runner func(*Worker, *AnnounceCommand) error
 
 type AnnounceCommand struct {
 	Command
@@ -63,6 +64,7 @@ func ControlAddress() string {
 
 func InitWorker() {
 	flag.StringVar(&tag, "tag", "", "internal tag")
+	flag.StringVar(&Config, "config", "", "config")
 	flag.BoolVar(&bootstrap, "bootstrap", false, "bootstrap mode")
 	flag.Parse()
 }

@@ -43,7 +43,9 @@ func (i *Process) inspectDispose() {
 func (i *Process) Exec() error {
 	i.state = "booting"
 	i.inspect()
-	i.cmd = exec.Command(i.group.exe.Exe, "--tag", i.tag)
+	args := []string{"-tag", i.tag}
+	args = append(args, i.group.exe.args()...)
+	i.cmd = exec.Command(i.group.exe.executable(), args...)
 	return i.cmd.Start()
 }
 
