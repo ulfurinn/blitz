@@ -2,7 +2,10 @@
 package blizzard
 
 import "time"
-import "bitbucket.org/ulfurinn/gen_proc"
+import (
+	"bitbucket.org/ulfurinn/blitz"
+	"bitbucket.org/ulfurinn/gen_proc"
+)
 
 type ProcessGen struct {
 	chMsg  chan gen_proc.ProcCall
@@ -14,6 +17,54 @@ func NewProcessGen() *ProcessGen {
 		chMsg:  make(chan gen_proc.ProcCall),
 		chStop: make(chan struct{}, 1),
 	}
+}
+
+type ProcessEnvelopeAnnounced struct {
+	proc *Process
+	cmd  blitz.AnnounceCommand
+	w    *WorkerConnection
+	ret  chan ProcessAnnouncedReturn
+	gen_proc.Envelope
+}
+
+func (msg ProcessEnvelopeAnnounced) Call() {
+	ret := make(chan ProcessAnnouncedReturn, 1)
+	go func(ret chan ProcessAnnouncedReturn) {
+		msg.proc.handleAnnounced(msg.cmd, msg.w)
+		ret <- ProcessAnnouncedReturn{}
+	}(ret)
+	select {
+	case result := <-ret:
+		msg.ret <- result
+	case <-msg.TimeoutCh():
+		close(msg.ret)
+	}
+
+}
+
+type ProcessAnnouncedReturn struct {
+}
+
+// Announced is a gen_server interface method.
+func (proc *Process) Announced(cmd blitz.AnnounceCommand, w *WorkerConnection) {
+	envelope := ProcessEnvelopeAnnounced{proc, cmd, w, make(chan ProcessAnnouncedReturn, 1), gen_proc.Envelope{0}}
+	proc.chMsg <- envelope
+	<-envelope.ret
+
+	return
+}
+
+// AnnouncedTimeout is a gen_server interface method.
+func (proc *Process) AnnouncedTimeout(cmd blitz.AnnounceCommand, w *WorkerConnection, timeout time.Duration) (gen_proc_err error) {
+	envelope := ProcessEnvelopeAnnounced{proc, cmd, w, make(chan ProcessAnnouncedReturn, 1), gen_proc.Envelope{timeout}}
+	proc.chMsg <- envelope
+	_, ok := <-envelope.ret
+	if !ok {
+		gen_proc_err = gen_proc.Timeout
+		return
+	}
+
+	return
 }
 
 type ProcessEnvelopeShutdown struct {

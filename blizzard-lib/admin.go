@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/GeertJohan/go.rice"
 	"github.com/gorilla/websocket"
@@ -164,6 +166,7 @@ func (a *assetServer) handleRegister(c *wsConnection) {
 		b := &bytes.Buffer{}
 		encoder := json.NewEncoder(b)
 		encoder.Encode(msg)
+		fmt.Println(b.String())
 		c.send <- b.Bytes()
 	})
 }
@@ -179,4 +182,61 @@ func (a *assetServer) handleBroadcast(msg interface{}) {
 	for ws := range a.ws {
 		ws.send <- b.Bytes()
 	}
+}
+
+type ProcGroupMessage struct {
+	Type          string  `json:"type"`
+	ID            uintptr `json:"id"`
+	Patch         uint64  `json:"patch"`
+	State         string  `json:"state"`
+	Requests      int64   `json:"currentRequests"`
+	TotalRequests uint64  `json:"totalRequests"`
+	Written       uint64  `json:"written"`
+}
+
+type ProcMessage struct {
+	Type    string  `json:"type"`
+	ID      uintptr `json:"id"`
+	PID     int     `json:"pid"`
+	PGID    uintptr `json:"group"`
+	State   string  `json:"state"`
+	Address string  `json:"address"`
+}
+
+func ProcGroupInspect(pg *ProcGroup) ProcGroupMessage {
+	m := ProcGroupMessage{}
+	m.Type = "proc-group"
+	m.ID = uintptr(unsafe.Pointer(pg))
+	m.Patch = pg.Patch
+	m.State = pg.state
+	m.Requests = atomic.LoadInt64(&pg.Requests)
+	m.TotalRequests = atomic.LoadUint64(&pg.TotalRequests)
+	m.Written = atomic.LoadUint64(&pg.Written)
+	return m
+}
+
+func ProcGroupInspectDispose(pg *ProcGroup) ProcGroupMessage {
+	m := ProcGroupMessage{}
+	m.Type = "proc-group-dispose"
+	m.ID = uintptr(unsafe.Pointer(pg))
+	return m
+}
+
+func ProcInspect(i *Process) (m ProcMessage) {
+	m.Type = "proc"
+	m.ID = uintptr(unsafe.Pointer(i))
+	m.PGID = uintptr(unsafe.Pointer(i.group))
+	if i.cmd != nil {
+		m.PID = i.cmd.Process.Pid
+	}
+	m.State = i.state
+	m.Address = i.Address
+	return
+}
+
+func ProcInspectDispose(i *Process) (m ProcMessage) {
+	m.Type = "proc-dispose"
+	m.ID = uintptr(unsafe.Pointer(i))
+	m.PGID = uintptr(unsafe.Pointer(i.group))
+	return
 }

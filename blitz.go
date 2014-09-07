@@ -17,7 +17,9 @@ type Command struct {
 
 type DeployCommand struct {
 	Command
-	Executable string `json:"executable"`
+	Executable string `json:"executable,omitempty"`
+	Adapter    string `json:"adapter,omitempty"`
+	Config     string `json:"config,omitempty"`
 }
 
 type BootstrapCommand struct {
@@ -34,14 +36,14 @@ type AnnounceCommand struct {
 	ProcTag  string     `json:"procTag"`
 	GroupTag string     `json:"groupTag"`
 	CmdTag   string     `json:"cmdTag"`
-	Patch    int64      `json:"patch"`
+	Patch    uint64     `json:"patch"`
 	Paths    []PathSpec `json:"paths"`
 	Network  string     `json:"network"`
 	Address  string     `json:"address"`
 }
 
 type Response struct {
-	Error error `json:"error"`
+	Error *string `json:"error"`
 }
 
 func fatal(err error) {
@@ -63,8 +65,4 @@ func InitWorker() {
 	flag.StringVar(&tag, "tag", "", "internal tag")
 	flag.BoolVar(&bootstrap, "bootstrap", false, "bootstrap mode")
 	flag.Parse()
-}
-
-func InitTool() {
-
 }

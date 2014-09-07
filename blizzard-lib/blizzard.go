@@ -24,6 +24,7 @@ type Blizzard struct {
 	tpl         *template.Template
 	tplErr      error
 	cleanup     *time.Timer
+	inspect     func(interface{})
 }
 
 type workerCommand struct {
@@ -43,6 +44,7 @@ func NewBlizzard() *Blizzard {
 		fatal(err)
 	}
 	b.static = static
+	b.inspect = static.Broadcast
 	return b
 }
 
@@ -116,8 +118,12 @@ func (b *Blizzard) handleCommand(cmd workerCommand) (resp blitz.Response) {
 		b.announce(command, cmd.WorkerConnection)
 		return
 	case blitz.DeployCommand:
-		resp.Error = b.deploy(command)
-		log("[blizzard] deployed: %v\n", resp)
+		err := b.deploy(command)
+		if err != nil {
+			resp.Error = new(string)
+			*resp.Error = err.Error()
+		}
+		log("[blizzard] deploy: %v\n", err)
 		return
 	case blitz.BootstrapCommand:
 		b.bootstrapped(command)
@@ -360,6 +366,9 @@ func (b *Blizzard) handleSnapshot(f func(interface{})) {
 		}
 	})
 	for _, pg := range b.procGroups {
-		f(map[string]interface{}{"type": "add-proc-group", "data": pg})
+		f(ProcGroupInspect(pg))
+		for _, i := range pg.Procs {
+			f(ProcInspect(i))
+		}
 	}
 }

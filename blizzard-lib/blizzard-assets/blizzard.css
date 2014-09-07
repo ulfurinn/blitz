@@ -1,6 +1,14 @@
 .ws-on { color: green; }
 .ws-off { color: red; }
 
+.pg-state-ready { background-color: #ddffdd; }
+.pg-state-waiting { background-color: #ffeedd; }
+
+.table-pg .column-state {
+    -webkit-column-width: 5em;
+    text-align: center;
+}
+
 .hidden {
     display: none;
 }

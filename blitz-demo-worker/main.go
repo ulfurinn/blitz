@@ -24,7 +24,7 @@ func main() {
 	fmt.Println("worker boot")
 	blitz.InitWorker()
 	fmt.Println(patch)
-	i, err := strconv.ParseInt(patch, 10, 0)
+	i, err := strconv.ParseUint(patch, 10, 0)
 	if err != nil {
 		fatal(err)
 	}

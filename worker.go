@@ -19,7 +19,7 @@ type Worker struct {
 	socket    string
 	listener  net.Listener
 	AppName   string
-	Patch     int64
+	Patch     uint64
 	Handler   http.Handler
 	Paths     []PathSpec
 	Bootstrap Bootstrapper
@@ -37,6 +37,7 @@ func (w *Worker) Run() (err error) {
 	}
 	err = w.listen()
 	if err != nil {
+		w.cleanup()
 		return
 	}
 
@@ -83,13 +84,12 @@ func (w *Worker) waitForCleanup(ch chan os.Signal) {
 }
 
 func (w *Worker) cleanup() {
-	if w.listener != nil {
-		w.listener.Close()
-	}
 	if w.conn != nil {
 		w.conn.Close()
 	}
-	os.Exit(0)
+	if w.listener != nil {
+		w.listener.Close()
+	}
 }
 
 func (w *Worker) send(data interface{}) error {

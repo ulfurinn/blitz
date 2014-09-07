@@ -30,21 +30,25 @@
                 </table>
             </div>
             <div id="procs"><h1>Procs</h1></div>
-                <table>
+                <table class="table-pg">
                     <tr>
+                        <th>ID</th>
                         <th>Patch</th>
+                        <th class="column-state">State</th>
                         <th>Current requests</th>
                         <th>Total requests</th>
                         <th>Total written</th>
                         <th>Instances</th>
                     </tr>
-                    <tr ng-repeat="pg in procGroups track by $index">
-                        <td class="table-number">{{pg.Patch}}</td>
-                        <td class="table-number">{{pg.Requests}}</td>
-                        <td class="table-number">{{pg.TotalRequests}}</td>
-                        <td class="table-number">{{pg.Written}}</td>
-                        <td ng-repeat="i in pg.Procs track by $index">
-                            <div>{{i.Address}}</div>
+                    <tr ng-repeat="(id, pg) in procGroups" class="pg-state-{{pg.state}}">
+                        <td class="table-number">{{pg.id}}</td>
+                        <td class="table-number">{{pg.patch}}</td>
+                        <td class="column-state">{{pg.state}}</td>
+                        <td class="table-number">{{pg.currentRequests}}</td>
+                        <td class="table-number">{{pg.totalRequests}}</td>
+                        <td class="table-number">{{pg.written}}</td>
+                        <td>
+                            <div ng-repeat="i in pg.procs track by $index">{{i.pid}} {{i.state}}</div>
                         </td>
                     </tr>
                 </table>

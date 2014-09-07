@@ -12,7 +12,8 @@ import (
 type ProcGroup struct {
 	*ProcGroupGen `gen_proc:"gen_server"`
 	server        *Blizzard
-	Patch         int64
+	state         string
+	Patch         uint64
 	paths         []blitz.PathSpec
 	exe           *Executable
 	PendingProcs  []*Process
@@ -21,25 +22,36 @@ type ProcGroup struct {
 	TotalRequests uint64
 	Written       uint64
 	ShuttingDown  bool
-	wg            sync.WaitGroup
-	spawning      sync.WaitGroup
+	busyWg        sync.WaitGroup
+	spawnWg       sync.WaitGroup
 }
 
 type ProgGroupSet map[*ProcGroup]struct{}
 
 func NewProcGroup(server *Blizzard, exe *Executable) *ProcGroup {
 	pg := &ProcGroup{
+		state:        "init",
 		ProcGroupGen: NewProcGroupGen(),
 		server:       server,
 		exe:          exe,
 	}
+	pg.inspect()
 	return pg
 }
 
+func (pg *ProcGroup) inspect() {
+	pg.server.inspect(ProcGroupInspect(pg))
+}
+func (pg *ProcGroup) inspectDispose() {
+	pg.server.inspect(ProcGroupInspectDispose(pg))
+}
+
 func (pg *ProcGroup) handleSpawn(count int, cb SpawnedCallback) (err error) {
-	pg.spawning.Add(count)
+	pg.state = "spawning"
+	pg.inspect()
+	pg.spawnWg.Add(count)
 	for i := 0; i < count; i++ {
-		p := &Process{ProcessGen: NewProcessGen(), group: pg, tag: randstr(32)}
+		p := &Process{ProcessGen: NewProcessGen(), server: pg.server, group: pg, tag: randstr(32)}
 		log("[procgroup %p] spawning proc %p\n", pg, p)
 		pg.handleAdd(p)
 		err = p.Exec()
@@ -48,7 +60,9 @@ func (pg *ProcGroup) handleSpawn(count int, cb SpawnedCallback) (err error) {
 		}
 	}
 	go func() {
-		pg.spawning.Wait()
+		pg.spawnWg.Wait()
+		pg.state = "ready"
+		pg.inspect()
 		cb(pg)
 	}()
 	return
@@ -59,18 +73,13 @@ func (pg *ProcGroup) handleAdd(p *Process) {
 }
 
 func (pg *ProcGroup) handleAnnounced(p *Process, cmd blitz.AnnounceCommand, w *WorkerConnection) (ok bool, first bool) {
-	pg.spawning.Done()
 	index, found := findProc(p, pg.PendingProcs)
 	if !found {
 		return
 	}
 
-	p.makeRevProxy()
-	p.tag = "" // not needed anymore
-	p.connection = w
-	p.network = cmd.Network
-	p.Address = cmd.Address
 	go p.Run()
+	p.Announced(cmd, w)
 
 	first = (pg.Patch == 0)
 	pg.PendingProcs = removeProc(index, pg.PendingProcs)
@@ -90,6 +99,7 @@ func (pg *ProcGroup) handleAnnounced(p *Process, cmd blitz.AnnounceCommand, w *W
 		pg.Patch = cmd.Patch
 		pg.paths = cmd.Paths
 	}
+	pg.spawnWg.Done()
 	return
 }
 
@@ -118,6 +128,7 @@ func (pg *ProcGroup) handleRemove(p *Process) (found bool) {
 	}
 	pg.Procs = removeProc(index, pg.Procs)
 	if len(pg.Procs) == 0 {
+		pg.inspectDispose()
 		go pg.server.removeGroup(pg)
 	}
 	go func() {
@@ -143,8 +154,12 @@ func (pg *ProcGroup) handleGetAll() []*Process {
 
 func (pg *ProcGroup) handleShutdown() {
 	pg.ShuttingDown = true
+	pg.state = "waiting"
+	pg.inspect()
 	go func() {
-		pg.wg.Wait()
+		pg.busyWg.Wait()
+		pg.state = "shutdown"
+		pg.inspect()
 		for _, p := range pg.Procs {
 			p.Shutdown()
 		}
@@ -161,12 +176,12 @@ func (pg *ProcGroup) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 }
 
 func (pg *ProcGroup) inc() {
-	pg.wg.Add(1)
+	pg.busyWg.Add(1)
 	atomic.AddInt64(&pg.Requests, 1)
 	atomic.AddUint64(&pg.TotalRequests, 1)
 }
 
 func (pg *ProcGroup) dec() {
 	atomic.AddInt64(&pg.Requests, -1)
-	pg.wg.Done()
+	pg.busyWg.Done()
 }
