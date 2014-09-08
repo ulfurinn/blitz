@@ -7,30 +7,38 @@
         <link rel="stylesheet" href="blizzard.css" type="text/css">
     </head>
     <body ng-controller="BlizzardCtl">
-        <div ng-switch on="wsOn">
-            <div ng-switch-when="true" class="ws-on">control connection is up</div>
-            <div ng-switch-default class="ws-off">control connection is down</div>
-        </div>
-        <div ng-class="{hidden: !wsOn}">
-            <div id="routes">
-                <h1>Routes</h1>
+        <header>
+            <h1>
+                <span class="connection-status" ng-switch on="wsOn">
+                    <span ng-switch-when="true" class="ws-on">●</span>
+                    <span ng-switch-default class="ws-off">●</span>
+                </span>
+                blizzard
+            </h1>
+        </header>
+        <div class="data" ng-class="{hidden: !wsOn}">
+            <div class="section routes">
+                <h2>Routes</h2>
                 <table>
                     <tr>
                         <th>Path</th>
+                        <th>Proc ID</th>
                         <th>Current requests</th>
                         <th>Total requests</th>
                         <th>Total written</th>
                     </tr>
                     <tr ng-repeat="route in routes track by $index">
                         <td>/v{{route.Version}}{{route.Path}}</td>
+                        <td class="table-number">{{route.Process}}</td>
                         <td class="table-number">{{route.Requests}}</td>
                         <td class="table-number">{{route.TotalRequests}}</td>
                         <td class="table-number">{{route.Written}}</td>
                     </tr>
                 </table>
             </div>
-            <div id="procs"><h1>Procs</h1></div>
-                <table class="table-pg">
+            <div class="section procs">
+                <h2>Procs</h2>
+                <table>
                     <tr>
                         <th>ID</th>
                         <th>Patch</th>
@@ -52,7 +60,18 @@
                         </td>
                     </tr>
                 </table>
-            <div id="execs"><h1>Executables</h1></div>
+            </div>
+            <div class="section apps">
+                <h2>Apps</h2>
+                <table>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Config/Binary</th>
+                        <th>Actions</th>
+                    </tr>
+                </table>
+            </div>
         </div>
     </body>
 </html>
