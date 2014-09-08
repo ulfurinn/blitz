@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -12,11 +13,24 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v1"
+
 	"bitbucket.org/ulfurinn/blitz"
 )
 
+type ExeConfig struct {
+	Type   string
+	Binary string
+	Config string
+}
+
+type BlizzardConfig struct {
+	Executables []ExeConfig
+}
+
 type Blizzard struct {
 	*BlizzardCh `gen_proc:"gen_server"`
+	config      BlizzardConfig
 	static      *assetServer
 	routers     *RouteSet
 	execs       []*Executable
@@ -51,6 +65,7 @@ func NewBlizzard() *Blizzard {
 
 func (b *Blizzard) Start() {
 	blitz.CreateDirectoryStructure()
+	b.readConfig()
 	listener, err := net.Listen("unix", blitz.ControlAddress())
 	if err != nil {
 		fatal(err)
@@ -60,10 +75,10 @@ func (b *Blizzard) Start() {
 	go b.Run()
 	go b.static.HTTP()
 	go b.static.Run()
-	// err = b.bootAllDeployed()
-	// if err != nil {
-	// 	fatal(err)
-	// }
+	err = b.bootAllDeployed()
+	if err != nil {
+		fatal(err)
+	}
 	b.cleanup = time.NewTimer(time.Second)
 	b.cleanup.Stop()
 	go func() {
@@ -193,7 +208,61 @@ func (b *Blizzard) deploy(cmd blitz.DeployCommand) error {
 	}
 
 	b.execs = append(b.execs, e)
+	b.addExeConfig(e)
 	return e.bootstrap()
+}
+
+func (b *Blizzard) addExeConfig(e *Executable) {
+	c := ExeConfig{}
+	if e.Exe != "" {
+		c.Type = "native"
+		c.Binary = e.Basename
+	} else {
+		c.Type = e.Adapter
+		c.Config = e.Config
+	}
+	b.config.Executables = append(b.config.Executables, c)
+	b.writeConfig()
+}
+
+var configPath = "blitz/blizzard.yml"
+
+func (b *Blizzard) writeConfig() {
+	f, err := os.Create(configPath)
+	if err != nil {
+		log("[blizzard] %v\n", err)
+		return
+	}
+	defer f.Close()
+	yml, err := yaml.Marshal(b.config)
+	if err != nil {
+		log("[blizzard] %v\n", err)
+		return
+	}
+	_, err = f.Write(yml)
+	if err != nil {
+		log("[blizzard] %v\n", err)
+		return
+	}
+}
+
+func (b *Blizzard) readConfig() {
+	f, err := os.Open(configPath)
+	if err != nil {
+		log("[blizzard] %v\n", err)
+		return
+	}
+	defer f.Close()
+	yml, err := ioutil.ReadAll(f)
+	if err != nil {
+		log("[blizzard] %v\n", err)
+		return
+	}
+	err = yaml.Unmarshal(yml, &b.config)
+	if err != nil {
+		log("[blizzard] %v\n", err)
+		return
+	}
 }
 
 func (b *Blizzard) bootstrapped(cmd blitz.BootstrapCommand) {
@@ -230,20 +299,23 @@ func (b *Blizzard) mount(proc *ProcGroup) {
 	})
 }
 
-// func (b *Blizzard) bootAllDeployed() error {
-// 	return filepath.Walk("blitz/deploy", func(path string, info os.FileInfo, err error) error {
-// 		if err != nil {
-// 			return err
-// 		}
-// 		if !info.IsDir() && info.Mode().Perm()&0111 > 0 {
-// 			err := b.bootDeployed(path, 1)
-// 			if err != nil {
-// 				return err
-// 			}
-// 		}
-// 		return nil
-// 	})
-// }
+func (b *Blizzard) bootAllDeployed() error {
+	for _, c := range b.config.Executables {
+		e := &Executable{server: b}
+		if c.Type == "native" {
+			e.Basename = c.Binary
+			e.Exe = fmt.Sprintf("blitz/deploy/%s", c.Binary)
+		} else {
+			e.Adapter = c.Type
+			e.Config = c.Config
+		}
+		b.execs = append(b.execs, e)
+		if err := e.bootstrap(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func (b *Blizzard) findExeByTag(tag string) *Executable {
 	for _, e := range b.execs {
@@ -343,6 +415,9 @@ func (b *Blizzard) handleCleanup() {
 func (b *Blizzard) unusedHandlers(used ProgGroupSet) (result ProgGroupSet) {
 	result = make(ProgGroupSet)
 	for _, pg := range b.procGroups {
+		if !pg.IsReady() {
+			continue
+		}
 		if _, isUsed := used[pg]; !isUsed {
 			result[pg] = struct{}{}
 		}

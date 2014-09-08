@@ -70,6 +70,56 @@ func (proc *ProcGroup) SpawnTimeout(count int, cb SpawnedCallback, timeout time.
 	return
 }
 
+type ProcGroupEnvelopeIsReady struct {
+	proc *ProcGroup
+
+	ret chan ProcGroupIsReadyReturn
+	gen_proc.Envelope
+}
+
+func (msg ProcGroupEnvelopeIsReady) Call() {
+	ret := make(chan ProcGroupIsReadyReturn, 1)
+	go func(ret chan ProcGroupIsReadyReturn) {
+		retval0 := msg.proc.handleIsReady()
+		ret <- ProcGroupIsReadyReturn{retval0}
+	}(ret)
+	select {
+	case result := <-ret:
+		msg.ret <- result
+	case <-msg.TimeoutCh():
+		close(msg.ret)
+	}
+
+}
+
+type ProcGroupIsReadyReturn struct {
+	retval0 bool
+}
+
+// IsReady is a gen_server interface method.
+func (proc *ProcGroup) IsReady() (retval0 bool) {
+	envelope := ProcGroupEnvelopeIsReady{proc, make(chan ProcGroupIsReadyReturn, 1), gen_proc.Envelope{0}}
+	proc.chMsg <- envelope
+	retval := <-envelope.ret
+	retval0 = retval.retval0
+
+	return
+}
+
+// IsReadyTimeout is a gen_server interface method.
+func (proc *ProcGroup) IsReadyTimeout(timeout time.Duration) (retval0 bool, gen_proc_err error) {
+	envelope := ProcGroupEnvelopeIsReady{proc, make(chan ProcGroupIsReadyReturn, 1), gen_proc.Envelope{timeout}}
+	proc.chMsg <- envelope
+	retval, ok := <-envelope.ret
+	if !ok {
+		gen_proc_err = gen_proc.Timeout
+		return
+	}
+	retval0 = retval.retval0
+
+	return
+}
+
 type ProcGroupEnvelopeAdd struct {
 	proc *ProcGroup
 	p    *Process

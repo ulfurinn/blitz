@@ -68,6 +68,10 @@ func (pg *ProcGroup) handleSpawn(count int, cb SpawnedCallback) (err error) {
 	return
 }
 
+func (pg *ProcGroup) handleIsReady() bool {
+	return pg.state == "ready"
+}
+
 func (pg *ProcGroup) handleAdd(p *Process) {
 	pg.PendingProcs = append(pg.PendingProcs, p)
 }
