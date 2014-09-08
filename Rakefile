@@ -8,17 +8,17 @@ task :default do
   sh "goimports -w=true src/bitbucket.org/ulfurinn/blitz/blizzard-lib/proc_group.gen.go"
   sh "goimports -w=true src/bitbucket.org/ulfurinn/blitz/blizzard-lib/proc.gen.go"
   sh "goimports -w=true src/bitbucket.org/ulfurinn/blitz/blizzard-lib/admin.gen.go"
-  sh 'go install -ldflags "-X main.patch `date +%s`" bitbucket.org/ulfurinn/blitz/...'
+  sh 'go install -ldflags "-X main.patch `TZ=UTC date +%Y%m%d%H%M%S`" bitbucket.org/ulfurinn/blitz/...'
 end
 
 desc "Rebuild embedded"
 task :rice do
   sh "rice -i bitbucket.org/ulfurinn/blitz/blizzard-lib embed-go"
-  sh 'go install -ldflags "-X main.patch `date +%s`" bitbucket.org/ulfurinn/blitz/...'
+  sh 'go install -ldflags "-X main.patch `TZ=UTC date +%Y%m%d%H%M%S`" bitbucket.org/ulfurinn/blitz/...'
 end
 
 desc "Rebuild dynamic"
 task :norice do
   sh "rm src/bitbucket.org/ulfurinn/blitz/blizzard-lib/*.rice-box.go"
-  sh 'go install -ldflags "-X main.patch `date +%s`" bitbucket.org/ulfurinn/blitz/...'
+  sh 'go install -ldflags "-X main.patch `TZ=UTC date +%Y%m%d%H%M%S`" bitbucket.org/ulfurinn/blitz/...'
 end
