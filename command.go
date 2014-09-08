@@ -35,6 +35,12 @@ func (c *Cli) Run() {
 			cli.StringFlag{Name: "adapter", Usage: "foreign worker adapter type"},
 			cli.StringFlag{Name: "config", Usage: "adapter-specific config file"},
 		},
+	}, cli.Command{
+		Name: "list",
+		Subcommands: []cli.Command{cli.Command{
+			Name:   "apps",
+			Action: c.ListApps,
+		}},
 	}}
 	app.Run(os.Args)
 }
@@ -44,16 +50,9 @@ func (c *Cli) Connect() (err error) {
 	return
 }
 
-func (c *Cli) GetResponse() {
+func (c *Cli) GetResponse(out interface{}) error {
 	decoder := json.NewDecoder(c.conn)
-	v := Response{}
-	err := decoder.Decode(&v)
-	if err != nil {
-		fatal(err)
-	}
-	if v.Error != nil {
-		fatal(fmt.Errorf(*v.Error))
-	}
+	return decoder.Decode(out)
 }
 
 func (c *Cli) Deploy(ctx *cli.Context) {
@@ -79,7 +78,33 @@ func (c *Cli) Deploy(ctx *cli.Context) {
 	if err != nil {
 		fatal(err)
 	}
-	c.GetResponse()
+	var resp Response
+	err = c.GetResponse(&resp)
+	if err != nil {
+		fatal(err)
+	}
+	if resp.Error != nil {
+		fatal(fmt.Errorf(*resp.Error))
+	}
+}
+
+func (c *Cli) ListApps(ctx *cli.Context) {
+	cmd := ListExecutablesCommand{Command{Type: "list-apps"}}
+	err := c.send(cmd)
+	if err != nil {
+		fatal(err)
+	}
+	var resp ListExecutablesResponse
+	err = c.GetResponse(&resp)
+	if err != nil {
+		fatal(err)
+	}
+	if resp.Error != nil {
+		fatal(fmt.Errorf(*resp.Error))
+	}
+	for _, app := range resp.Executables {
+		fmt.Println(app)
+	}
 }
 
 func (c *Cli) send(data interface{}) error {

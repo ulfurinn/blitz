@@ -92,6 +92,10 @@ func (w *WorkerConnection) Run() {
 			var bootstrap blitz.BootstrapCommand
 			json.Unmarshal(raw, &bootstrap)
 			parsed = bootstrap
+		case "list-apps":
+			var list blitz.ListExecutablesCommand
+			json.Unmarshal(raw, &list)
+			parsed = list
 		}
 		if parsed != nil {
 			cmd := workerCommand{command: parsed, WorkerConnection: w}

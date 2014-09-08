@@ -2,10 +2,7 @@
 package blizzard
 
 import "time"
-import (
-	"bitbucket.org/ulfurinn/blitz"
-	"bitbucket.org/ulfurinn/gen_proc"
-)
+import "bitbucket.org/ulfurinn/gen_proc"
 
 type BlizzardCh struct {
 	chMsg  chan gen_proc.ProcCall
@@ -29,8 +26,8 @@ type BlizzardEnvelopeCommand struct {
 func (msg BlizzardEnvelopeCommand) Call() {
 	ret := make(chan BlizzardCommandReturn, 1)
 	go func(ret chan BlizzardCommandReturn) {
-		resp := msg.proc.handleCommand(msg.cmd)
-		ret <- BlizzardCommandReturn{resp}
+		retval0 := msg.proc.handleCommand(msg.cmd)
+		ret <- BlizzardCommandReturn{retval0}
 	}(ret)
 	select {
 	case result := <-ret:
@@ -42,21 +39,21 @@ func (msg BlizzardEnvelopeCommand) Call() {
 }
 
 type BlizzardCommandReturn struct {
-	resp blitz.Response
+	retval0 interface{}
 }
 
 // Command is a gen_server interface method.
-func (proc *Blizzard) Command(cmd workerCommand) (resp blitz.Response) {
+func (proc *Blizzard) Command(cmd workerCommand) (retval0 interface{}) {
 	envelope := BlizzardEnvelopeCommand{proc, cmd, make(chan BlizzardCommandReturn, 1), gen_proc.Envelope{0}}
 	proc.chMsg <- envelope
 	retval := <-envelope.ret
-	resp = retval.resp
+	retval0 = retval.retval0
 
 	return
 }
 
 // CommandTimeout is a gen_server interface method.
-func (proc *Blizzard) CommandTimeout(cmd workerCommand, timeout time.Duration) (resp blitz.Response, gen_proc_err error) {
+func (proc *Blizzard) CommandTimeout(cmd workerCommand, timeout time.Duration) (retval0 interface{}, gen_proc_err error) {
 	envelope := BlizzardEnvelopeCommand{proc, cmd, make(chan BlizzardCommandReturn, 1), gen_proc.Envelope{timeout}}
 	proc.chMsg <- envelope
 	retval, ok := <-envelope.ret
@@ -64,7 +61,7 @@ func (proc *Blizzard) CommandTimeout(cmd workerCommand, timeout time.Duration) (
 		gen_proc_err = gen_proc.Timeout
 		return
 	}
-	resp = retval.resp
+	retval0 = retval.retval0
 
 	return
 }

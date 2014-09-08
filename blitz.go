@@ -43,8 +43,17 @@ type AnnounceCommand struct {
 	Address  string     `json:"address"`
 }
 
+type ListExecutablesCommand struct {
+	Command
+}
+
 type Response struct {
 	Error *string `json:"error"`
+}
+
+type ListExecutablesResponse struct {
+	Response
+	Executables []string `json:"execs"`
 }
 
 func fatal(err error) {

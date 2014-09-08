@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -112,24 +113,34 @@ func (b *Blizzard) processControl(listener net.Listener) {
 	}
 }
 
-func (b *Blizzard) handleCommand(cmd workerCommand) (resp blitz.Response) {
+func (b *Blizzard) handleCommand(cmd workerCommand) interface{} {
 	switch command := cmd.command.(type) {
 	case blitz.AnnounceCommand:
 		b.announce(command, cmd.WorkerConnection)
-		return
+		return blitz.Response{}
 	case blitz.DeployCommand:
+		resp := blitz.Response{}
 		err := b.deploy(command)
 		if err != nil {
 			resp.Error = new(string)
 			*resp.Error = err.Error()
 		}
 		log("[blizzard] deploy: %v\n", err)
-		return
+		return resp
 	case blitz.BootstrapCommand:
 		b.bootstrapped(command)
-		return
+		return blitz.Response{}
+	case blitz.ListExecutablesCommand:
+		resp := blitz.ListExecutablesResponse{Executables: []string{}}
+		for _, e := range b.execs {
+			resp.Executables = append(resp.Executables, e.AppName)
+		}
+		return resp
 	default:
-		return
+		resp := blitz.Response{}
+		resp.Error = new(string)
+		*resp.Error = fmt.Sprintf("unsupported command type %v", reflect.TypeOf(cmd.command))
+		return resp
 	}
 }
 
