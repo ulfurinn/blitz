@@ -5,7 +5,7 @@
 .pg-state-waiting { background-color: #ffeedd; }
 
 .table-pg .column-state {
-    -webkit-column-width: 5em;
+    width: 5em;
     text-align: center;
 }
 
