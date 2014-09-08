@@ -35,7 +35,8 @@ func main() {
 			{Path: "/sleep", Version: 1},
 			{Path: "/ok", Version: 1},
 		},
-		Run: blitz.StandardRunner,
+		Run:     blitz.StandardRunner,
+		Handler: api(),
 	}
 	err = w.Start()
 	if err != nil {
