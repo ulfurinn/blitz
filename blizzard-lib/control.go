@@ -49,13 +49,11 @@ func (w *WorkerConnection) closed() {
 
 func (w *WorkerConnection) isDisconnect(err error) bool {
 	if err == io.EOF {
-		log("[control %p] EOF\n", w)
 		return true
 	}
 	if opError, isOpError := err.(*net.OpError); isOpError {
 		errno := opError.Err.(syscall.Errno)
 		if errno == syscall.ECONNRESET {
-			log("[control %p] ECONNRESET\n", w)
 			return true
 		}
 	}
@@ -64,7 +62,6 @@ func (w *WorkerConnection) isDisconnect(err error) bool {
 
 func (w *WorkerConnection) Run() {
 	defer w.closed()
-	log("[control %p] opened channel\n", w)
 	decoder := json.NewDecoder(w.conn)
 	for {
 		var raw json.RawMessage

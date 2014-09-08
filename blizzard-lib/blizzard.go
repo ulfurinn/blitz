@@ -140,7 +140,6 @@ func (b *Blizzard) handleCommand(cmd workerCommand) interface{} {
 			resp.Error = new(string)
 			*resp.Error = err.Error()
 		}
-		log("[blizzard] deploy: %v\n", err)
 		return resp
 	case blitz.BootstrapCommand:
 		b.bootstrapped(command)
