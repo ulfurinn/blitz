@@ -1,7 +1,7 @@
 ---
 servers: 4
 blitz:
-  app_name: thin demo
+  appname: thin demo
   mount:
     - version: 1
       paths: ["/test"]
