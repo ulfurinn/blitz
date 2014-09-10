@@ -39,13 +39,11 @@ type Runner func(*Worker, *AnnounceCommand) error
 
 type AnnounceCommand struct {
 	Command
-	ProcTag  string     `json:"procTag"`
-	GroupTag string     `json:"groupTag"`
-	CmdTag   string     `json:"cmdTag"`
-	Patch    uint64     `json:"patch"`
-	Paths    []PathSpec `json:"paths"`
-	Network  string     `json:"network"`
-	Address  string     `json:"address"`
+	Tag     string     `json:"tag"`
+	Patch   uint64     `json:"patch"`
+	Paths   []PathSpec `json:"paths"`
+	Network string     `json:"network"`
+	Address string     `json:"address"`
 }
 
 type ListExecutablesCommand struct {

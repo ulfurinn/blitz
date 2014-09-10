@@ -130,7 +130,7 @@ func (w *Worker) bootstrap() error {
 func (w *Worker) announce() error {
 	a := AnnounceCommand{}
 	a.Type = "announce"
-	a.ProcTag = tag
+	a.Tag = tag
 	a.Network = "unix"
 	a.Address = fmt.Sprintf("blitz/%d.worker", os.Getpid())
 	a.Patch = w.Patch

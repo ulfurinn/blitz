@@ -167,9 +167,9 @@ func (b *Blizzard) handleCommand(cmd workerCommand) interface{} {
 }
 
 func (b *Blizzard) announce(cmd *blitz.AnnounceCommand, worker *WorkerConnection) {
-	procGroup, proc := b.findProcByTag(cmd.ProcTag)
+	procGroup, proc := b.findProcByTag(cmd.Tag)
 	if proc == nil {
-		log("[blizzard] no matching proc found for tag %s\n", cmd.ProcTag)
+		log("[blizzard] no matching proc found for tag %s\n", cmd.Tag)
 		return
 	}
 	log("[blizzard] announce from proc group %p proc %p\n", procGroup, proc)
