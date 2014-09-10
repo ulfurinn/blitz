@@ -3,7 +3,7 @@ app = proc do |env|
   [
     200,          # Status code
     {             # Response headers
-      'Content-Type' => 'text/html',
+      'Content-Type' => 'text/plain',
       'Content-Length' => body.length.to_s,
     },
     [body]        # Response body
