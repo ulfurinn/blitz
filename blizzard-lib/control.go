@@ -2,10 +2,12 @@ package blizzard
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"os"
 	"os/signal"
+	"reflect"
 	"syscall"
 
 	"bitbucket.org/ulfurinn/blitz"
@@ -29,9 +31,10 @@ type workerMonitor interface {
 }
 
 type WorkerConnection struct {
-	conn    net.Conn
-	server  *Blizzard
-	monitor workerMonitor
+	connType string
+	conn     net.Conn
+	server   *Blizzard
+	monitor  workerMonitor
 }
 
 func (w *WorkerConnection) send(data interface{}) error {
@@ -60,6 +63,22 @@ func (w *WorkerConnection) isDisconnect(err error) bool {
 	return false
 }
 
+func blitzCommand(typ string) (cmd interface{}) {
+	switch typ {
+	case "announce":
+		return &blitz.AnnounceCommand{}
+	case "deploy":
+		return &blitz.DeployCommand{}
+	case "bootstrap":
+		return &blitz.BootstrapCommand{}
+	case "list-apps":
+		return &blitz.ListExecutablesCommand{}
+	case "restart-takeover":
+		return &blitz.RestartTakeoverCommand{}
+	}
+	return nil
+}
+
 func (w *WorkerConnection) Run() {
 	defer w.closed()
 	decoder := json.NewDecoder(w.conn)
@@ -72,32 +91,29 @@ func (w *WorkerConnection) Run() {
 			}
 			return
 		}
+		log("[control %p] %v\n", w, string(raw))
 		var base blitz.Command
 		json.Unmarshal(raw, &base)
-		var parsed interface{}
-		log("[control %p] %s\n", w, base.Type)
-		switch base.Type {
-		case "announce":
-			var announce blitz.AnnounceCommand
-			json.Unmarshal(raw, &announce)
-			parsed = announce
-		case "deploy":
-			var deploy blitz.DeployCommand
-			json.Unmarshal(raw, &deploy)
-			parsed = deploy
-		case "bootstrap":
-			var bootstrap blitz.BootstrapCommand
-			json.Unmarshal(raw, &bootstrap)
-			parsed = bootstrap
-		case "list-apps":
-			var list blitz.ListExecutablesCommand
-			json.Unmarshal(raw, &list)
-			parsed = list
+		if base.Type == "connection-type" {
+			var ct blitz.ConnectionTypeCommand
+			json.Unmarshal(raw, &ct)
+			w.connType = ct.ConnectionType
+			continue
 		}
+		var response interface{}
+		parsed := blitzCommand(base.Type)
 		if parsed != nil {
-			cmd := workerCommand{command: parsed, WorkerConnection: w}
-			clientResp := w.server.Command(cmd)
-			w.send(clientResp)
+			err = json.Unmarshal(raw, reflect.ValueOf(parsed).Interface())
+			if err == nil {
+				response = w.server.Command(workerCommand{command: parsed, WorkerConnection: w})
+			} else {
+				e := err.Error()
+				response = blitz.Response{Error: &e}
+			}
+		} else {
+			e := fmt.Sprintf("unrecognized command: %s", base.Type)
+			response = blitz.Response{Error: &e}
 		}
+		w.send(response)
 	}
 }

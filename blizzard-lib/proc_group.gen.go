@@ -19,19 +19,22 @@ func NewProcGroupGen() *ProcGroupGen {
 	}
 }
 
-type ProcGroupEnvelopeSpawn struct {
-	proc  *ProcGroup
-	count int
-	cb    SpawnedCallback
-	ret   chan ProcGroupSpawnReturn
+func (proc *ProcGroup) handleGenCall(f func() interface{}) interface{} {
+	return f()
+}
+
+type ProcGroupEnvelopeGenCall struct {
+	proc *ProcGroup
+	f    func() interface{}
+	ret  chan ProcGroupGenCallReturn
 	gen_proc.Envelope
 }
 
-func (msg ProcGroupEnvelopeSpawn) Call() {
-	ret := make(chan ProcGroupSpawnReturn, 1)
-	go func(ret chan ProcGroupSpawnReturn) {
-		err := msg.proc.handleSpawn(msg.count, msg.cb)
-		ret <- ProcGroupSpawnReturn{err}
+func (msg ProcGroupEnvelopeGenCall) Call() {
+	ret := make(chan ProcGroupGenCallReturn, 1)
+	go func(ret chan ProcGroupGenCallReturn) {
+		genret := msg.proc.handleGenCall(msg.f)
+		ret <- ProcGroupGenCallReturn{genret}
 	}(ret)
 	select {
 	case result := <-ret:
@@ -42,30 +45,30 @@ func (msg ProcGroupEnvelopeSpawn) Call() {
 
 }
 
-type ProcGroupSpawnReturn struct {
-	err error
+type ProcGroupGenCallReturn struct {
+	genret interface{}
 }
 
-// Spawn is a gen_server interface method.
-func (proc *ProcGroup) Spawn(count int, cb SpawnedCallback) (err error) {
-	envelope := ProcGroupEnvelopeSpawn{proc, count, cb, make(chan ProcGroupSpawnReturn, 1), gen_proc.Envelope{0}}
+// GenCall is a gen_server interface method.
+func (proc *ProcGroup) GenCall(f func() interface{}) (genret interface{}) {
+	envelope := ProcGroupEnvelopeGenCall{proc, f, make(chan ProcGroupGenCallReturn, 1), gen_proc.Envelope{0}}
 	proc.chMsg <- envelope
 	retval := <-envelope.ret
-	err = retval.err
+	genret = retval.genret
 
 	return
 }
 
-// SpawnTimeout is a gen_server interface method.
-func (proc *ProcGroup) SpawnTimeout(count int, cb SpawnedCallback, timeout time.Duration) (err error, gen_proc_err error) {
-	envelope := ProcGroupEnvelopeSpawn{proc, count, cb, make(chan ProcGroupSpawnReturn, 1), gen_proc.Envelope{timeout}}
+// GenCallTimeout is a gen_server interface method.
+func (proc *ProcGroup) GenCallTimeout(f func() interface{}, timeout time.Duration) (genret interface{}, gen_proc_err error) {
+	envelope := ProcGroupEnvelopeGenCall{proc, f, make(chan ProcGroupGenCallReturn, 1), gen_proc.Envelope{timeout}}
 	proc.chMsg <- envelope
 	retval, ok := <-envelope.ret
 	if !ok {
 		gen_proc_err = gen_proc.Timeout
 		return
 	}
-	err = retval.err
+	genret = retval.genret
 
 	return
 }
@@ -170,7 +173,7 @@ func (proc *ProcGroup) AddTimeout(p *Process, timeout time.Duration) (gen_proc_e
 type ProcGroupEnvelopeAnnounced struct {
 	proc *ProcGroup
 	p    *Process
-	cmd  blitz.AnnounceCommand
+	cmd  *blitz.AnnounceCommand
 	w    *WorkerConnection
 	ret  chan ProcGroupAnnouncedReturn
 	gen_proc.Envelope
@@ -197,7 +200,7 @@ type ProcGroupAnnouncedReturn struct {
 }
 
 // Announced is a gen_server interface method.
-func (proc *ProcGroup) Announced(p *Process, cmd blitz.AnnounceCommand, w *WorkerConnection) (ok bool, first bool) {
+func (proc *ProcGroup) Announced(p *Process, cmd *blitz.AnnounceCommand, w *WorkerConnection) (ok bool, first bool) {
 	envelope := ProcGroupEnvelopeAnnounced{proc, p, cmd, w, make(chan ProcGroupAnnouncedReturn, 1), gen_proc.Envelope{0}}
 	proc.chMsg <- envelope
 	retval := <-envelope.ret
@@ -208,7 +211,7 @@ func (proc *ProcGroup) Announced(p *Process, cmd blitz.AnnounceCommand, w *Worke
 }
 
 // AnnouncedTimeout is a gen_server interface method.
-func (proc *ProcGroup) AnnouncedTimeout(p *Process, cmd blitz.AnnounceCommand, w *WorkerConnection, timeout time.Duration) (ok bool, first bool, gen_proc_err error) {
+func (proc *ProcGroup) AnnouncedTimeout(p *Process, cmd *blitz.AnnounceCommand, w *WorkerConnection, timeout time.Duration) (ok bool, first bool, gen_proc_err error) {
 	envelope := ProcGroupEnvelopeAnnounced{proc, p, cmd, w, make(chan ProcGroupAnnouncedReturn, 1), gen_proc.Envelope{timeout}}
 	proc.chMsg <- envelope
 	retval, ok := <-envelope.ret
@@ -272,6 +275,56 @@ func (proc *ProcGroup) RemoveTimeout(p *Process, timeout time.Duration) (found b
 	return
 }
 
+type ProcGroupEnvelopeFindProcByConnection struct {
+	proc *ProcGroup
+	w    *WorkerConnection
+	ret  chan ProcGroupFindProcByConnectionReturn
+	gen_proc.Envelope
+}
+
+func (msg ProcGroupEnvelopeFindProcByConnection) Call() {
+	ret := make(chan ProcGroupFindProcByConnectionReturn, 1)
+	go func(ret chan ProcGroupFindProcByConnectionReturn) {
+		retval0 := msg.proc.handleFindProcByConnection(msg.w)
+		ret <- ProcGroupFindProcByConnectionReturn{retval0}
+	}(ret)
+	select {
+	case result := <-ret:
+		msg.ret <- result
+	case <-msg.TimeoutCh():
+		close(msg.ret)
+	}
+
+}
+
+type ProcGroupFindProcByConnectionReturn struct {
+	retval0 *Process
+}
+
+// FindProcByConnection is a gen_server interface method.
+func (proc *ProcGroup) FindProcByConnection(w *WorkerConnection) (retval0 *Process) {
+	envelope := ProcGroupEnvelopeFindProcByConnection{proc, w, make(chan ProcGroupFindProcByConnectionReturn, 1), gen_proc.Envelope{0}}
+	proc.chMsg <- envelope
+	retval := <-envelope.ret
+	retval0 = retval.retval0
+
+	return
+}
+
+// FindProcByConnectionTimeout is a gen_server interface method.
+func (proc *ProcGroup) FindProcByConnectionTimeout(w *WorkerConnection, timeout time.Duration) (retval0 *Process, gen_proc_err error) {
+	envelope := ProcGroupEnvelopeFindProcByConnection{proc, w, make(chan ProcGroupFindProcByConnectionReturn, 1), gen_proc.Envelope{timeout}}
+	proc.chMsg <- envelope
+	retval, ok := <-envelope.ret
+	if !ok {
+		gen_proc_err = gen_proc.Timeout
+		return
+	}
+	retval0 = retval.retval0
+
+	return
+}
+
 type ProcGroupEnvelopeGet struct {
 	proc *ProcGroup
 
@@ -322,6 +375,56 @@ func (proc *ProcGroup) GetTimeout(timeout time.Duration) (retval0 *Process, gen_
 	return
 }
 
+type ProcGroupEnvelopeGetForRemoval struct {
+	proc *ProcGroup
+
+	ret chan ProcGroupGetForRemovalReturn
+	gen_proc.Envelope
+}
+
+func (msg ProcGroupEnvelopeGetForRemoval) Call() {
+	ret := make(chan ProcGroupGetForRemovalReturn, 1)
+	go func(ret chan ProcGroupGetForRemovalReturn) {
+		retval0 := msg.proc.handleGetForRemoval()
+		ret <- ProcGroupGetForRemovalReturn{retval0}
+	}(ret)
+	select {
+	case result := <-ret:
+		msg.ret <- result
+	case <-msg.TimeoutCh():
+		close(msg.ret)
+	}
+
+}
+
+type ProcGroupGetForRemovalReturn struct {
+	retval0 *Process
+}
+
+// GetForRemoval is a gen_server interface method.
+func (proc *ProcGroup) GetForRemoval() (retval0 *Process) {
+	envelope := ProcGroupEnvelopeGetForRemoval{proc, make(chan ProcGroupGetForRemovalReturn, 1), gen_proc.Envelope{0}}
+	proc.chMsg <- envelope
+	retval := <-envelope.ret
+	retval0 = retval.retval0
+
+	return
+}
+
+// GetForRemovalTimeout is a gen_server interface method.
+func (proc *ProcGroup) GetForRemovalTimeout(timeout time.Duration) (retval0 *Process, gen_proc_err error) {
+	envelope := ProcGroupEnvelopeGetForRemoval{proc, make(chan ProcGroupGetForRemovalReturn, 1), gen_proc.Envelope{timeout}}
+	proc.chMsg <- envelope
+	retval, ok := <-envelope.ret
+	if !ok {
+		gen_proc_err = gen_proc.Timeout
+		return
+	}
+	retval0 = retval.retval0
+
+	return
+}
+
 type ProcGroupEnvelopeGetAll struct {
 	proc *ProcGroup
 
@@ -361,6 +464,56 @@ func (proc *ProcGroup) GetAll() (retval0 []*Process) {
 // GetAllTimeout is a gen_server interface method.
 func (proc *ProcGroup) GetAllTimeout(timeout time.Duration) (retval0 []*Process, gen_proc_err error) {
 	envelope := ProcGroupEnvelopeGetAll{proc, make(chan ProcGroupGetAllReturn, 1), gen_proc.Envelope{timeout}}
+	proc.chMsg <- envelope
+	retval, ok := <-envelope.ret
+	if !ok {
+		gen_proc_err = gen_proc.Timeout
+		return
+	}
+	retval0 = retval.retval0
+
+	return
+}
+
+type ProcGroupEnvelopeSize struct {
+	proc *ProcGroup
+
+	ret chan ProcGroupSizeReturn
+	gen_proc.Envelope
+}
+
+func (msg ProcGroupEnvelopeSize) Call() {
+	ret := make(chan ProcGroupSizeReturn, 1)
+	go func(ret chan ProcGroupSizeReturn) {
+		retval0 := msg.proc.handleSize()
+		ret <- ProcGroupSizeReturn{retval0}
+	}(ret)
+	select {
+	case result := <-ret:
+		msg.ret <- result
+	case <-msg.TimeoutCh():
+		close(msg.ret)
+	}
+
+}
+
+type ProcGroupSizeReturn struct {
+	retval0 int
+}
+
+// Size is a gen_server interface method.
+func (proc *ProcGroup) Size() (retval0 int) {
+	envelope := ProcGroupEnvelopeSize{proc, make(chan ProcGroupSizeReturn, 1), gen_proc.Envelope{0}}
+	proc.chMsg <- envelope
+	retval := <-envelope.ret
+	retval0 = retval.retval0
+
+	return
+}
+
+// SizeTimeout is a gen_server interface method.
+func (proc *ProcGroup) SizeTimeout(timeout time.Duration) (retval0 int, gen_proc_err error) {
+	envelope := ProcGroupEnvelopeSize{proc, make(chan ProcGroupSizeReturn, 1), gen_proc.Envelope{timeout}}
 	proc.chMsg <- envelope
 	retval, ok := <-envelope.ret
 	if !ok {

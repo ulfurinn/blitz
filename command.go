@@ -25,7 +25,8 @@ func (c *Cli) Run() {
 	app := cli.NewApp()
 	app.Name = "blitz"
 	app.Usage = "blitz/blizzard control utility"
-	app.Commands = []cli.Command{cli.Command{
+	app.EnableBashCompletion = true
+	app.Commands = []cli.Command{{
 		Name:      "deploy",
 		Usage:     "Registers a worker with blizzard",
 		ShortName: "d",
@@ -35,18 +36,30 @@ func (c *Cli) Run() {
 			cli.StringFlag{Name: "adapter", Usage: "foreign worker adapter type"},
 			cli.StringFlag{Name: "config", Usage: "adapter-specific config file"},
 		},
-	}, cli.Command{
+	}, {
 		Name: "list",
-		Subcommands: []cli.Command{cli.Command{
+		Subcommands: []cli.Command{{
 			Name:   "apps",
 			Action: c.ListApps,
 		}},
+	}, {
+		Name: "restart",
+		Subcommands: []cli.Command{{
+			Name:   "takeover",
+			Action: c.Takeover,
+			Flags:  []cli.Flag{cli.StringFlag{Name: "app"}},
+		}},
 	}}
+
 	app.Run(os.Args)
 }
 
 func (c *Cli) Connect() (err error) {
 	c.conn, err = net.Dial("unix", "blitz/ctl")
+	if err != nil {
+		return
+	}
+	err = c.send(ConnectionTypeCommand{Command{"connection-type"}, "cli"})
 	return
 }
 
@@ -105,6 +118,30 @@ func (c *Cli) ListApps(ctx *cli.Context) {
 	for _, app := range resp.Executables {
 		fmt.Println(app)
 	}
+}
+
+func (c *Cli) Takeover(ctx *cli.Context) {
+	app := ctx.String("app")
+	if app == "" {
+		fatal(fmt.Errorf("restart requires an app name"))
+	}
+	cmd := RestartTakeoverCommand{Command{Type: "restart-takeover"}, app}
+	resp := RestartTakeoverResponse{}
+	err := c.callBlizzard(cmd, &resp)
+	if err != nil {
+		fatal(err)
+	}
+	if err = resp.Err(); err != nil {
+		fatal(err)
+	}
+}
+
+func (c *Cli) callBlizzard(cmd interface{}, resp interface{}) error {
+	err := c.send(cmd)
+	if err != nil {
+		return err
+	}
+	return c.GetResponse(resp)
 }
 
 func (c *Cli) send(data interface{}) error {

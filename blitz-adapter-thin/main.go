@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
+	"strings"
+	"time"
 
 	"bitbucket.org/ulfurinn/blitz"
 )
@@ -86,6 +89,16 @@ func main() {
 			if err != nil {
 				return err
 			}
+			err = checkConnection(cmd.Address)
+			t := time.Now()
+			for err != nil && time.Since(t) < 30*time.Second {
+				time.Sleep(50 * time.Millisecond)
+				err = checkConnection(cmd.Address)
+			}
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 			w.Mainproc.Add(1)
 			go func() {
 				thinProc.Wait()
@@ -103,4 +116,12 @@ func main() {
 		os.Exit(4)
 	}
 	w.Wait()
+}
+
+func checkConnection(socket string) error {
+	c := http.Client{}
+	c.Transport = blitz.SubdirUnixTransport
+	parts := strings.Split(socket, "/")
+	_, err := c.Get(fmt.Sprintf("http://%s/", parts[1]))
+	return err
 }

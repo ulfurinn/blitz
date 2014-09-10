@@ -22,6 +22,7 @@ func (e *Executable) release() {
 }
 
 func (e *Executable) bootstrap() error {
+	log("[app %p] bootstrapping binary=%s adapter=%s config=%s\n", e, e.Exe, e.Adapter, e.Config)
 	e.Tag = randstr(32)
 	args := []string{"-bootstrap", "-tag", e.Tag}
 	args = append(args, e.args()...)
@@ -29,6 +30,8 @@ func (e *Executable) bootstrap() error {
 	err := e.BootstrapCmd.Start()
 	if err == nil {
 		go e.BootstrapCmd.Wait()
+	} else {
+		log("[app %p] bootstrap failed: %v\n", e, err)
 	}
 	return err
 }
@@ -37,6 +40,13 @@ func (e *Executable) spawn(cb SpawnedCallback) (pg *ProcGroup, err error) {
 	pg = NewProcGroup(e.server, e)
 	go pg.Run()
 	err = pg.Spawn(e.Instances, cb)
+	return
+}
+
+func (e *Executable) takeover(old *ProcGroup, cb SpawnedCallback) (pg *ProcGroup) {
+	pg = NewProcGroup(e.server, e)
+	go pg.Run()
+	go pg.Takeover(old, cb)
 	return
 }
 

@@ -16,6 +16,60 @@ func NewassetServerCh() *assetServerCh {
 	}
 }
 
+func (proc *assetServer) handleGenCall(f func() interface{}) interface{} {
+	return f()
+}
+
+type assetServerEnvelopeGenCall struct {
+	proc *assetServer
+	f    func() interface{}
+	ret  chan assetServerGenCallReturn
+	gen_proc.Envelope
+}
+
+func (msg assetServerEnvelopeGenCall) Call() {
+	ret := make(chan assetServerGenCallReturn, 1)
+	go func(ret chan assetServerGenCallReturn) {
+		genret := msg.proc.handleGenCall(msg.f)
+		ret <- assetServerGenCallReturn{genret}
+	}(ret)
+	select {
+	case result := <-ret:
+		msg.ret <- result
+	case <-msg.TimeoutCh():
+		close(msg.ret)
+	}
+
+}
+
+type assetServerGenCallReturn struct {
+	genret interface{}
+}
+
+// GenCall is a gen_server interface method.
+func (proc *assetServer) GenCall(f func() interface{}) (genret interface{}) {
+	envelope := assetServerEnvelopeGenCall{proc, f, make(chan assetServerGenCallReturn, 1), gen_proc.Envelope{0}}
+	proc.chMsg <- envelope
+	retval := <-envelope.ret
+	genret = retval.genret
+
+	return
+}
+
+// GenCallTimeout is a gen_server interface method.
+func (proc *assetServer) GenCallTimeout(f func() interface{}, timeout time.Duration) (genret interface{}, gen_proc_err error) {
+	envelope := assetServerEnvelopeGenCall{proc, f, make(chan assetServerGenCallReturn, 1), gen_proc.Envelope{timeout}}
+	proc.chMsg <- envelope
+	retval, ok := <-envelope.ret
+	if !ok {
+		gen_proc_err = gen_proc.Timeout
+		return
+	}
+	genret = retval.genret
+
+	return
+}
+
 type assetServerEnvelopeRegister struct {
 	proc *assetServer
 	c    *wsConnection

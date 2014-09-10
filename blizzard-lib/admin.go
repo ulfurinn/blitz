@@ -137,12 +137,12 @@ func (a *assetServer) serveWS(resp http.ResponseWriter, req *http.Request) {
 		log("[admin] %v\n", err)
 		return
 	}
-	log("[admin] new WS connection\n")
+	//log("[admin] new WS connection\n")
 	c := &wsConnection{send: make(chan []byte, 256), c: ws}
 	a.Register(c)
 	go c.write()
 	c.read(a)
-	log("[admin] lost WS connection\n")
+	//log("[admin] lost WS connection\n")
 }
 
 func (a *assetServer) serveAsset(resp http.ResponseWriter, path string) {
@@ -161,12 +161,11 @@ func (a *assetServer) serveAsset(resp http.ResponseWriter, path string) {
 
 func (a *assetServer) handleRegister(c *wsConnection) {
 	a.ws[c] = struct{}{}
-	log("[admin] registered WS, sending snapshot\n")
+	//log("[admin] registered WS, sending snapshot\n")
 	go a.b.Snapshot(func(msg interface{}) {
 		b := &bytes.Buffer{}
 		encoder := json.NewEncoder(b)
 		encoder.Encode(msg)
-		fmt.Println(b.String())
 		c.send <- b.Bytes()
 	})
 }

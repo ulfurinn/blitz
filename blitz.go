@@ -15,6 +15,11 @@ type Command struct {
 	Type string `json:"type"`
 }
 
+type ConnectionTypeCommand struct {
+	Command
+	ConnectionType string `json:"connType"`
+}
+
 type DeployCommand struct {
 	Command
 	Executable string `json:"executable,omitempty"`
@@ -51,9 +56,25 @@ type Response struct {
 	Error *string `json:"error"`
 }
 
+func (r Response) Err() error {
+	if r.Error == nil {
+		return nil
+	}
+	return fmt.Errorf(*r.Error)
+}
+
 type ListExecutablesResponse struct {
 	Response
 	Executables []string `json:"execs"`
+}
+
+type RestartTakeoverCommand struct {
+	Command
+	App string `json:"app"`
+}
+
+type RestartTakeoverResponse struct {
+	Response
 }
 
 func fatal(err error) {

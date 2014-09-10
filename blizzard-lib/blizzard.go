@@ -130,10 +130,10 @@ func (b *Blizzard) processControl(listener net.Listener) {
 
 func (b *Blizzard) handleCommand(cmd workerCommand) interface{} {
 	switch command := cmd.command.(type) {
-	case blitz.AnnounceCommand:
+	case *blitz.AnnounceCommand:
 		b.announce(command, cmd.WorkerConnection)
 		return blitz.Response{}
-	case blitz.DeployCommand:
+	case *blitz.DeployCommand:
 		resp := blitz.Response{}
 		err := b.deploy(command)
 		if err != nil {
@@ -141,13 +141,21 @@ func (b *Blizzard) handleCommand(cmd workerCommand) interface{} {
 			*resp.Error = err.Error()
 		}
 		return resp
-	case blitz.BootstrapCommand:
+	case *blitz.BootstrapCommand:
 		b.bootstrapped(command)
 		return blitz.Response{}
-	case blitz.ListExecutablesCommand:
+	case *blitz.ListExecutablesCommand:
 		resp := blitz.ListExecutablesResponse{Executables: []string{}}
 		for _, e := range b.execs {
 			resp.Executables = append(resp.Executables, e.AppName)
+		}
+		return resp
+	case *blitz.RestartTakeoverCommand:
+		resp := blitz.RestartTakeoverResponse{}
+		err := b.takeover(command.App)
+		if err != nil {
+			e := err.Error()
+			resp.Error = &e
 		}
 		return resp
 	default:
@@ -158,19 +166,19 @@ func (b *Blizzard) handleCommand(cmd workerCommand) interface{} {
 	}
 }
 
-func (b *Blizzard) announce(cmd blitz.AnnounceCommand, worker *WorkerConnection) {
+func (b *Blizzard) announce(cmd *blitz.AnnounceCommand, worker *WorkerConnection) {
 	procGroup, proc := b.findProcByTag(cmd.ProcTag)
 	if proc == nil {
 		log("[blizzard] no matching proc found for tag %s\n", cmd.ProcTag)
 		return
 	}
-	log("[blizzard] announce from proc group %p proc %p pid %d\n", procGroup, proc, proc.cmd.Process.Pid)
+	log("[blizzard] announce from proc group %p proc %p\n", procGroup, proc)
 	worker.monitor = b
 	procGroup.Announced(proc, cmd, worker)
 	//	TODO; what to do in case of patch mismatch?
 }
 
-func (b *Blizzard) deploy(cmd blitz.DeployCommand) error {
+func (b *Blizzard) deploy(cmd *blitz.DeployCommand) error {
 
 	e := &Executable{server: b}
 
@@ -264,7 +272,7 @@ func (b *Blizzard) readConfig() {
 	}
 }
 
-func (b *Blizzard) bootstrapped(cmd blitz.BootstrapCommand) {
+func (b *Blizzard) bootstrapped(cmd *blitz.BootstrapCommand) {
 	e := b.findExeByTag(cmd.BinaryTag)
 	if e == nil {
 		log("[blizzard] no matching binary for tag %s\n", cmd.BinaryTag)
@@ -279,6 +287,20 @@ func (b *Blizzard) bootstrapped(cmd blitz.BootstrapCommand) {
 	} else {
 		log("[blizzard] while spawning: %v\n, err")
 	}
+}
+
+func (b *Blizzard) takeover(app string) (err error) {
+	e := b.findAppByName(app)
+	if e == nil {
+		return fmt.Errorf("unknown app: %s", app)
+	}
+	pg := b.findGroupByApp(e)
+	if e == nil {
+		return fmt.Errorf("no proc group for app: %s", app)
+	}
+	newPg := e.takeover(pg, b.mount)
+	b.procGroups = append(b.procGroups, newPg)
+	return
 }
 
 func (b *Blizzard) mount(proc *ProcGroup) {
@@ -316,6 +338,15 @@ func (b *Blizzard) bootAllDeployed() error {
 	return nil
 }
 
+func (b *Blizzard) findAppByName(name string) *Executable {
+	for _, e := range b.execs {
+		if e.AppName == name {
+			return e
+		}
+	}
+	return nil
+}
+
 func (b *Blizzard) findExeByTag(tag string) *Executable {
 	for _, e := range b.execs {
 		if e.Tag == tag {
@@ -345,18 +376,22 @@ func (b *Blizzard) findProcByTag(tag string) (group *ProcGroup, proc *Process) {
 	return
 }
 
-func (b *Blizzard) findProcByConnection(w *WorkerConnection) (group *ProcGroup, proc *Process) {
-out:
+func (b *Blizzard) findGroupByApp(e *Executable) (pg *ProcGroup) {
 	for _, pg := range b.procGroups {
-		for _, p := range pg.Procs {
-			if p.connection == w {
-				group = pg
-				proc = p
-				break out
-			}
+		if pg.exe == e {
+			return pg
 		}
 	}
-	return
+	return nil
+}
+
+func (b *Blizzard) findProcByConnection(w *WorkerConnection) (group *ProcGroup, proc *Process) {
+	for _, group = range b.procGroups {
+		if proc = group.FindProcByConnection(w); proc != nil {
+			return
+		}
+	}
+	return nil, nil
 }
 
 func findProcGroup(p *ProcGroup, list []*ProcGroup) (index int, found bool) {
@@ -425,6 +460,7 @@ func (b *Blizzard) unusedHandlers(used ProgGroupSet) (result ProgGroupSet) {
 }
 
 func (b *Blizzard) handleWorkerClosed(w *WorkerConnection) {
+	log("[blizzard] lost connection: %s\n", w.connType)
 	pg, i := b.findProcByConnection(w)
 	if i == nil {
 		return

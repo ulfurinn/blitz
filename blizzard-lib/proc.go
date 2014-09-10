@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"os/exec"
+	"sync"
 	"syscall"
 
 	"bitbucket.org/ulfurinn/blitz"
@@ -23,6 +24,8 @@ type Process struct {
 	Written          uint64
 	Obsolete         bool
 	cmd              *exec.Cmd
+	busyWg           sync.WaitGroup
+	announceCb       func(*Process, bool)
 }
 
 type ProcessSet map[*ProcGroup]struct{}
@@ -46,7 +49,13 @@ func (i *Process) Exec() error {
 	args := []string{"-tag", i.tag}
 	args = append(args, i.group.exe.args()...)
 	i.cmd = exec.Command(i.group.exe.executable(), args...)
-	return i.cmd.Start()
+	err := i.cmd.Start()
+	if err != nil {
+		if i.announceCb != nil {
+			i.announceCb(i, false)
+		}
+	}
+	return err
 }
 
 func (i *Process) makeRevProxy() {
@@ -67,7 +76,7 @@ func (i *Process) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	i.proxy.ServeHTTP(resp, req)
 }
 
-func (i *Process) handleAnnounced(cmd blitz.AnnounceCommand, w *WorkerConnection) {
+func (i *Process) handleAnnounced(cmd *blitz.AnnounceCommand, w *WorkerConnection) {
 	i.makeRevProxy()
 	i.tag = "" // not needed anymore
 	i.connection = w
@@ -75,6 +84,9 @@ func (i *Process) handleAnnounced(cmd blitz.AnnounceCommand, w *WorkerConnection
 	i.Address = cmd.Address
 	i.state = "ready"
 	i.inspect()
+	if i.announceCb != nil {
+		i.announceCb(i, true)
+	}
 }
 
 func (i *Process) handleShutdown() {
@@ -85,6 +97,13 @@ func (i *Process) handleShutdown() {
 		i.cmd.Process.Signal(syscall.SIGTERM)
 	}
 }
+
+// func (i *Process) handleShutdownSync() {
+// 	if i.cmd != nil {
+// 		i.handleShutdown()
+// 		i.handleCleanupProcess()
+// 	}
+// }
 
 func (i *Process) handleCleanupProcess() {
 	if i.cmd != nil {

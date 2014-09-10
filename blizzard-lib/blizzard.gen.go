@@ -16,6 +16,60 @@ func NewBlizzardCh() *BlizzardCh {
 	}
 }
 
+func (proc *Blizzard) handleGenCall(f func() interface{}) interface{} {
+	return f()
+}
+
+type BlizzardEnvelopeGenCall struct {
+	proc *Blizzard
+	f    func() interface{}
+	ret  chan BlizzardGenCallReturn
+	gen_proc.Envelope
+}
+
+func (msg BlizzardEnvelopeGenCall) Call() {
+	ret := make(chan BlizzardGenCallReturn, 1)
+	go func(ret chan BlizzardGenCallReturn) {
+		genret := msg.proc.handleGenCall(msg.f)
+		ret <- BlizzardGenCallReturn{genret}
+	}(ret)
+	select {
+	case result := <-ret:
+		msg.ret <- result
+	case <-msg.TimeoutCh():
+		close(msg.ret)
+	}
+
+}
+
+type BlizzardGenCallReturn struct {
+	genret interface{}
+}
+
+// GenCall is a gen_server interface method.
+func (proc *Blizzard) GenCall(f func() interface{}) (genret interface{}) {
+	envelope := BlizzardEnvelopeGenCall{proc, f, make(chan BlizzardGenCallReturn, 1), gen_proc.Envelope{0}}
+	proc.chMsg <- envelope
+	retval := <-envelope.ret
+	genret = retval.genret
+
+	return
+}
+
+// GenCallTimeout is a gen_server interface method.
+func (proc *Blizzard) GenCallTimeout(f func() interface{}, timeout time.Duration) (genret interface{}, gen_proc_err error) {
+	envelope := BlizzardEnvelopeGenCall{proc, f, make(chan BlizzardGenCallReturn, 1), gen_proc.Envelope{timeout}}
+	proc.chMsg <- envelope
+	retval, ok := <-envelope.ret
+	if !ok {
+		gen_proc_err = gen_proc.Timeout
+		return
+	}
+	genret = retval.genret
+
+	return
+}
+
 type BlizzardEnvelopeCommand struct {
 	proc *Blizzard
 	cmd  workerCommand

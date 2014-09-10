@@ -40,13 +40,13 @@
                 <h2>Procs</h2>
                 <table>
                     <tr>
-                        <th>ID</th>
-                        <th>Patch</th>
+                        <th class="column-id">ID</th>
+                        <th class="column-patch">Patch</th>
                         <th class="column-state">State</th>
-                        <th>Current requests</th>
-                        <th>Total requests</th>
-                        <th>Total written</th>
-                        <th>Instances</th>
+                        <th class="column-requests">Current requests</th>
+                        <th class="column-total-requests">Total requests</th>
+                        <th class="column-written">Total written</th>
+                        <th class="column-instances">Instances</th>
                     </tr>
                     <tr ng-repeat="(id, pg) in procGroups" class="pg-state-{{pg.state}}">
                         <td class="table-number">{{pg.id}}</td>

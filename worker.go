@@ -63,6 +63,10 @@ func (w *Worker) connect() (err error) {
 		return
 	}
 	w.conn = conn
+	err = w.send(ConnectionTypeCommand{Command{"connection-type"}, "worker"})
+	if err != nil {
+		return
+	}
 	return
 }
 

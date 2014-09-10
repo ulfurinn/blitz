@@ -111,6 +111,7 @@ func (r *Router) Unmount(proc *ProcGroup) {
 		router.Unmount(proc)
 	}
 	if r.handler == proc {
+		log("[router] unmounting %p from %s\n", proc, r.Path)
 		r.handler = nil //	mainly to preserve the root router in master
 	}
 	r.routers = routers
