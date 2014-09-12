@@ -91,7 +91,7 @@ func (w *WorkerConnection) Run() {
 			}
 			return
 		}
-		log("[control %p] %v\n", w, string(raw))
+		//log("[control %p] %v\n", w, string(raw))
 		var base blitz.Command
 		json.Unmarshal(raw, &base)
 		if base.Type == "connection-type" {
