@@ -15,7 +15,7 @@ type ProcGroup struct {
 	state         string
 	Patch         uint64
 	paths         []blitz.PathSpec
-	exe           *Executable
+	exe           *Application
 	PendingProcs  []*Process
 	Procs         []*Process
 	RemovedProcs  []*Process
@@ -28,7 +28,7 @@ type ProcGroup struct {
 
 type ProgGroupSet map[*ProcGroup]struct{}
 
-func NewProcGroup(server *Blizzard, exe *Executable) *ProcGroup {
+func NewProcGroup(server *Blizzard, exe *Application) *ProcGroup {
 	pg := &ProcGroup{
 		state:        "init",
 		ProcGroupGen: NewProcGroupGen(),

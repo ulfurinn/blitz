@@ -82,10 +82,10 @@ func (c *Cli) Deploy(ctx *cli.Context) {
 		fatal(fmt.Errorf("'adapter' requires 'config'"))
 	}
 	cmd := DeployCommand{
-		Command:    Command{Type: "deploy"},
-		Executable: worker,
-		Adapter:    adapter,
-		Config:     config,
+		Command:     Command{Type: "deploy"},
+		Application: worker,
+		Adapter:     adapter,
+		Config:      config,
 	}
 	err := c.send(cmd)
 	if err != nil {

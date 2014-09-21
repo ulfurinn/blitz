@@ -27,7 +27,7 @@ type SnapshotRoute struct {
 }
 
 type Snapshot struct {
-	Execs  []*Executable
+	Execs  []*Application
 	Procs  []*ProcGroup
 	Routes []*SnapshotRoute
 }

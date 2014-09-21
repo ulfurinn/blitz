@@ -33,7 +33,7 @@ type Blizzard struct {
 	config      BlizzardConfig
 	static      *assetServer
 	routers     *RouteSet
-	execs       []*Executable
+	apps        []*Application
 	procGroups  []*ProcGroup
 	server      *http.Server
 	tpl         *template.Template
@@ -146,8 +146,8 @@ func (b *Blizzard) handleCommand(cmd workerCommand) interface{} {
 		return blitz.Response{}
 	case *blitz.ListExecutablesCommand:
 		resp := blitz.ListExecutablesResponse{Executables: []string{}}
-		for _, e := range b.execs {
-			resp.Executables = append(resp.Executables, e.AppName)
+		for _, app := range b.apps {
+			resp.Executables = append(resp.Executables, app.AppName)
 		}
 		return resp
 	case *blitz.RestartTakeoverCommand:
@@ -180,14 +180,14 @@ func (b *Blizzard) announce(cmd *blitz.AnnounceCommand, worker *WorkerConnection
 
 func (b *Blizzard) deploy(cmd *blitz.DeployCommand) error {
 
-	e := &Executable{server: b}
+	app := &Application{server: b}
 
-	if cmd.Executable != "" {
-		components := strings.Split(cmd.Executable, string(os.PathSeparator))
+	if cmd.Application != "" {
+		components := strings.Split(cmd.Application, string(os.PathSeparator))
 		basename := components[len(components)-1]
 		deployedName := fmt.Sprintf("%s.blitz%d", basename, time.Now().Unix())
 		command := fmt.Sprintf("blitz/deploy/%s", deployedName)
-		origin, err := os.Open(cmd.Executable)
+		origin, err := os.Open(cmd.Application)
 		if err != nil {
 			return err
 		}
@@ -207,26 +207,26 @@ func (b *Blizzard) deploy(cmd *blitz.DeployCommand) error {
 		if err != nil {
 			return err
 		}
-		e.Exe = command
-		e.Basename = filepath.Base(command)
+		app.Exe = command
+		app.Basename = filepath.Base(command)
 	} else {
-		e.Adapter = cmd.Adapter
-		e.Config = cmd.Config
+		app.Adapter = cmd.Adapter
+		app.Config = cmd.Config
 	}
 
-	b.execs = append(b.execs, e)
-	b.addExeConfig(e)
-	return e.bootstrap()
+	b.apps = append(b.apps, app)
+	b.addExeConfig(app)
+	return app.bootstrap()
 }
 
-func (b *Blizzard) addExeConfig(e *Executable) {
+func (b *Blizzard) addExeConfig(app *Application) {
 	c := ExeConfig{}
-	if e.Exe != "" {
+	if app.Exe != "" {
 		c.Type = "native"
-		c.Binary = e.Basename
+		c.Binary = app.Basename
 	} else {
-		c.Type = e.Adapter
-		c.Config = e.Config
+		c.Type = app.Adapter
+		c.Config = app.Config
 	}
 	b.config.Executables = append(b.config.Executables, c)
 	b.writeConfig()
@@ -273,15 +273,15 @@ func (b *Blizzard) readConfig() {
 }
 
 func (b *Blizzard) bootstrapped(cmd *blitz.BootstrapCommand) {
-	e := b.findExeByTag(cmd.BinaryTag)
-	if e == nil {
+	app := b.findExeByTag(cmd.BinaryTag)
+	if app == nil {
 		log("[blizzard] no matching binary for tag %s\n", cmd.BinaryTag)
 		return
 	}
-	log("[blizzard] bootstrapped %p: %d instances of %s\n", e, cmd.Instances, cmd.AppName)
-	e.Instances = cmd.Instances
-	e.AppName = cmd.AppName
-	pg, err := e.spawn(b.mount)
+	log("[blizzard] bootstrapped %p: %d instances of %s\n", app, cmd.Instances, cmd.AppName)
+	app.Instances = cmd.Instances
+	app.AppName = cmd.AppName
+	pg, err := app.spawn(b.mount)
 	if err == nil {
 		b.procGroups = append(b.procGroups, pg)
 	} else {
@@ -322,7 +322,7 @@ func (b *Blizzard) mount(proc *ProcGroup) {
 
 func (b *Blizzard) bootAllDeployed() error {
 	for _, c := range b.config.Executables {
-		e := &Executable{server: b}
+		e := &Application{server: b}
 		if c.Type == "native" {
 			e.Basename = c.Binary
 			e.Exe = fmt.Sprintf("blitz/deploy/%s", c.Binary)
@@ -330,7 +330,7 @@ func (b *Blizzard) bootAllDeployed() error {
 			e.Adapter = c.Type
 			e.Config = c.Config
 		}
-		b.execs = append(b.execs, e)
+		b.apps = append(b.apps, e)
 		if err := e.bootstrap(); err != nil {
 			return err
 		}
@@ -338,8 +338,8 @@ func (b *Blizzard) bootAllDeployed() error {
 	return nil
 }
 
-func (b *Blizzard) findAppByName(name string) *Executable {
-	for _, e := range b.execs {
+func (b *Blizzard) findAppByName(name string) *Application {
+	for _, e := range b.apps {
 		if e.AppName == name {
 			return e
 		}
@@ -347,8 +347,8 @@ func (b *Blizzard) findAppByName(name string) *Executable {
 	return nil
 }
 
-func (b *Blizzard) findExeByTag(tag string) *Executable {
-	for _, e := range b.execs {
+func (b *Blizzard) findExeByTag(tag string) *Application {
+	for _, e := range b.apps {
 		if e.Tag == tag {
 			return e
 		}
@@ -376,7 +376,7 @@ func (b *Blizzard) findProcByTag(tag string) (group *ProcGroup, proc *Process) {
 	return
 }
 
-func (b *Blizzard) findGroupByApp(e *Executable) (pg *ProcGroup) {
+func (b *Blizzard) findGroupByApp(e *Application) (pg *ProcGroup) {
 	for _, pg := range b.procGroups {
 		if pg.exe == e {
 			return pg
@@ -469,7 +469,7 @@ func (b *Blizzard) handleWorkerClosed(w *WorkerConnection) {
 }
 
 func (b *Blizzard) handleSnapshot(f func(interface{})) {
-	// for _, e := range b.execs {
+	// for _, e := range b.apps {
 	// 	s.Execs = append(s.Execs, e)
 	// }
 	// for _, i := range b.procGroups {

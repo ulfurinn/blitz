@@ -2,7 +2,7 @@ package blizzard
 
 import "os/exec"
 
-type Executable struct {
+type Application struct {
 	Exe          string
 	Adapter      string
 	Config       string
@@ -15,13 +15,13 @@ type Executable struct {
 	server       *Blizzard
 }
 
-func (e *Executable) release() {
+func (e *Application) release() {
 	log("[exe %s] releasing\n", e.Basename)
 	//os.Rename(e.Exe, fmt.Sprintf("blitz/deploy-old/%s", e.Basename))
 	e.Obsolete = true
 }
 
-func (e *Executable) bootstrap() error {
+func (e *Application) bootstrap() error {
 	log("[app %p] bootstrapping binary=%s adapter=%s config=%s\n", e, e.Exe, e.Adapter, e.Config)
 	e.Tag = randstr(32)
 	args := []string{"-bootstrap", "-tag", e.Tag}
@@ -36,28 +36,28 @@ func (e *Executable) bootstrap() error {
 	return err
 }
 
-func (e *Executable) spawn(cb SpawnedCallback) (pg *ProcGroup, err error) {
+func (e *Application) spawn(cb SpawnedCallback) (pg *ProcGroup, err error) {
 	pg = NewProcGroup(e.server, e)
 	go pg.Run()
 	err = pg.Spawn(e.Instances, cb)
 	return
 }
 
-func (e *Executable) takeover(old *ProcGroup, cb SpawnedCallback) (pg *ProcGroup) {
+func (e *Application) takeover(old *ProcGroup, cb SpawnedCallback) (pg *ProcGroup) {
 	pg = NewProcGroup(e.server, e)
 	go pg.Run()
 	go pg.Takeover(old, cb)
 	return
 }
 
-func (e *Executable) executable() string {
+func (e *Application) executable() string {
 	if e.Exe != "" {
 		return e.Exe
 	}
 	return "blitz-adapter-" + e.Adapter
 }
 
-func (e *Executable) args() []string {
+func (e *Application) args() []string {
 	if e.Exe != "" {
 		return []string{}
 	}

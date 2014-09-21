@@ -22,9 +22,9 @@ type ConnectionTypeCommand struct {
 
 type DeployCommand struct {
 	Command
-	Executable string `json:"executable,omitempty"`
-	Adapter    string `json:"adapter,omitempty"`
-	Config     string `json:"config,omitempty"`
+	Application string `json:"executable,omitempty"`
+	Adapter     string `json:"adapter,omitempty"`
+	Config      string `json:"config,omitempty"`
 }
 
 type BootstrapCommand struct {
