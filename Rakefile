@@ -1,13 +1,19 @@
+def procs
+  @procs ||= `grep -lr 'gen_proc:"gen_server"' src/bitbucket.org/ulfurinn/blitz/blizzard-lib`.split(/\n/).map &:chomp
+end
+
+def gens
+  @gens ||= `find src -name *.gen.go`.split(/\n/).map &:chomp
+end
+
 desc "Build"
 task :default do
-  sh "bin/gen_proc src/bitbucket.org/ulfurinn/blitz/blizzard-lib/blizzard.go"
-  sh "bin/gen_proc src/bitbucket.org/ulfurinn/blitz/blizzard-lib/proc_group.go"
-  sh "bin/gen_proc src/bitbucket.org/ulfurinn/blitz/blizzard-lib/proc.go"
-  sh "bin/gen_proc src/bitbucket.org/ulfurinn/blitz/blizzard-lib/admin.go"
-  sh "goimports -w=true src/bitbucket.org/ulfurinn/blitz/blizzard-lib/blizzard.gen.go"
-  sh "goimports -w=true src/bitbucket.org/ulfurinn/blitz/blizzard-lib/proc_group.gen.go"
-  sh "goimports -w=true src/bitbucket.org/ulfurinn/blitz/blizzard-lib/proc.gen.go"
-  sh "goimports -w=true src/bitbucket.org/ulfurinn/blitz/blizzard-lib/admin.gen.go"
+  procs.each do |pr|
+    sh "bin/gen_proc #{pr}"
+  end
+  gens.each do |gen|
+    sh "goimports -w=true #{gen}"
+  end
   sh 'go install -ldflags "-X main.patch `TZ=UTC date +%Y%m%d%H%M%S`" bitbucket.org/ulfurinn/blitz/...'
 end
 
