@@ -5,8 +5,12 @@ import "time"
 import "bitbucket.org/ulfurinn/gen_proc"
 
 type assetServerCh struct {
-	chMsg  chan gen_proc.ProcCall
-	chStop chan struct{}
+	chMsg           chan gen_proc.ProcCall
+	retChGenCall    chan assetServerGenCallReturn
+	retChRegister   chan assetServerRegisterReturn
+	retChUnregister chan assetServerUnregisterReturn
+	retChBroadcast  chan assetServerBroadcastReturn
+	chStop          chan struct{}
 }
 
 func NewassetServerCh() *assetServerCh {
@@ -29,12 +33,15 @@ type assetServerEnvelopeGenCall struct {
 
 func (msg assetServerEnvelopeGenCall) Call() {
 	ret := make(chan assetServerGenCallReturn, 1)
+	msg.proc.retChGenCall = ret
 	go func(ret chan assetServerGenCallReturn) {
 		genret := msg.proc.handleGenCall(msg.f)
+		msg.proc.retChGenCall = nil
 		ret <- assetServerGenCallReturn{genret}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -79,12 +86,15 @@ type assetServerEnvelopeRegister struct {
 
 func (msg assetServerEnvelopeRegister) Call() {
 	ret := make(chan assetServerRegisterReturn, 1)
+	msg.proc.retChRegister = ret
 	go func(ret chan assetServerRegisterReturn) {
 		msg.proc.handleRegister(msg.c)
+		msg.proc.retChRegister = nil
 		ret <- assetServerRegisterReturn{}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -126,12 +136,15 @@ type assetServerEnvelopeUnregister struct {
 
 func (msg assetServerEnvelopeUnregister) Call() {
 	ret := make(chan assetServerUnregisterReturn, 1)
+	msg.proc.retChUnregister = ret
 	go func(ret chan assetServerUnregisterReturn) {
 		msg.proc.handleUnregister(msg.c)
+		msg.proc.retChUnregister = nil
 		ret <- assetServerUnregisterReturn{}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -173,12 +186,15 @@ type assetServerEnvelopeBroadcast struct {
 
 func (msg assetServerEnvelopeBroadcast) Call() {
 	ret := make(chan assetServerBroadcastReturn, 1)
+	msg.proc.retChBroadcast = ret
 	go func(ret chan assetServerBroadcastReturn) {
 		msg.proc.handleBroadcast(msg.msg)
+		msg.proc.retChBroadcast = nil
 		ret <- assetServerBroadcastReturn{}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)

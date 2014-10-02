@@ -8,8 +8,12 @@ import (
 )
 
 type ProcessGen struct {
-	chMsg  chan gen_proc.ProcCall
-	chStop chan struct{}
+	chMsg               chan gen_proc.ProcCall
+	retChGenCall        chan ProcessGenCallReturn
+	retChAnnounced      chan ProcessAnnouncedReturn
+	retChShutdown       chan ProcessShutdownReturn
+	retChCleanupProcess chan ProcessCleanupProcessReturn
+	chStop              chan struct{}
 }
 
 func NewProcessGen() *ProcessGen {
@@ -32,12 +36,15 @@ type ProcessEnvelopeGenCall struct {
 
 func (msg ProcessEnvelopeGenCall) Call() {
 	ret := make(chan ProcessGenCallReturn, 1)
+	msg.proc.retChGenCall = ret
 	go func(ret chan ProcessGenCallReturn) {
 		genret := msg.proc.handleGenCall(msg.f)
+		msg.proc.retChGenCall = nil
 		ret <- ProcessGenCallReturn{genret}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -83,12 +90,15 @@ type ProcessEnvelopeAnnounced struct {
 
 func (msg ProcessEnvelopeAnnounced) Call() {
 	ret := make(chan ProcessAnnouncedReturn, 1)
+	msg.proc.retChAnnounced = ret
 	go func(ret chan ProcessAnnouncedReturn) {
 		msg.proc.handleAnnounced(msg.cmd, msg.w)
+		msg.proc.retChAnnounced = nil
 		ret <- ProcessAnnouncedReturn{}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -130,12 +140,15 @@ type ProcessEnvelopeShutdown struct {
 
 func (msg ProcessEnvelopeShutdown) Call() {
 	ret := make(chan ProcessShutdownReturn, 1)
+	msg.proc.retChShutdown = ret
 	go func(ret chan ProcessShutdownReturn) {
 		msg.proc.handleShutdown()
+		msg.proc.retChShutdown = nil
 		ret <- ProcessShutdownReturn{}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -177,12 +190,15 @@ type ProcessEnvelopeCleanupProcess struct {
 
 func (msg ProcessEnvelopeCleanupProcess) Call() {
 	ret := make(chan ProcessCleanupProcessReturn, 1)
+	msg.proc.retChCleanupProcess = ret
 	go func(ret chan ProcessCleanupProcessReturn) {
 		msg.proc.handleCleanupProcess()
+		msg.proc.retChCleanupProcess = nil
 		ret <- ProcessCleanupProcessReturn{}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)

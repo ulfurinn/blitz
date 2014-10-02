@@ -8,8 +8,19 @@ import (
 )
 
 type ProcGroupGen struct {
-	chMsg  chan gen_proc.ProcCall
-	chStop chan struct{}
+	chMsg                     chan gen_proc.ProcCall
+	retChGenCall              chan ProcGroupGenCallReturn
+	retChIsReady              chan ProcGroupIsReadyReturn
+	retChAdd                  chan ProcGroupAddReturn
+	retChAnnounced            chan ProcGroupAnnouncedReturn
+	retChRemove               chan ProcGroupRemoveReturn
+	retChFindProcByConnection chan ProcGroupFindProcByConnectionReturn
+	retChGet                  chan ProcGroupGetReturn
+	retChGetForRemoval        chan ProcGroupGetForRemovalReturn
+	retChGetAll               chan ProcGroupGetAllReturn
+	retChSize                 chan ProcGroupSizeReturn
+	retChShutdown             chan ProcGroupShutdownReturn
+	chStop                    chan struct{}
 }
 
 func NewProcGroupGen() *ProcGroupGen {
@@ -32,12 +43,15 @@ type ProcGroupEnvelopeGenCall struct {
 
 func (msg ProcGroupEnvelopeGenCall) Call() {
 	ret := make(chan ProcGroupGenCallReturn, 1)
+	msg.proc.retChGenCall = ret
 	go func(ret chan ProcGroupGenCallReturn) {
 		genret := msg.proc.handleGenCall(msg.f)
+		msg.proc.retChGenCall = nil
 		ret <- ProcGroupGenCallReturn{genret}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -82,12 +96,15 @@ type ProcGroupEnvelopeIsReady struct {
 
 func (msg ProcGroupEnvelopeIsReady) Call() {
 	ret := make(chan ProcGroupIsReadyReturn, 1)
+	msg.proc.retChIsReady = ret
 	go func(ret chan ProcGroupIsReadyReturn) {
 		retval0 := msg.proc.handleIsReady()
+		msg.proc.retChIsReady = nil
 		ret <- ProcGroupIsReadyReturn{retval0}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -132,12 +149,15 @@ type ProcGroupEnvelopeAdd struct {
 
 func (msg ProcGroupEnvelopeAdd) Call() {
 	ret := make(chan ProcGroupAddReturn, 1)
+	msg.proc.retChAdd = ret
 	go func(ret chan ProcGroupAddReturn) {
 		msg.proc.handleAdd(msg.p)
+		msg.proc.retChAdd = nil
 		ret <- ProcGroupAddReturn{}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -181,12 +201,15 @@ type ProcGroupEnvelopeAnnounced struct {
 
 func (msg ProcGroupEnvelopeAnnounced) Call() {
 	ret := make(chan ProcGroupAnnouncedReturn, 1)
+	msg.proc.retChAnnounced = ret
 	go func(ret chan ProcGroupAnnouncedReturn) {
 		ok, first := msg.proc.handleAnnounced(msg.p, msg.cmd, msg.w)
+		msg.proc.retChAnnounced = nil
 		ret <- ProcGroupAnnouncedReturn{ok, first}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -234,12 +257,15 @@ type ProcGroupEnvelopeRemove struct {
 
 func (msg ProcGroupEnvelopeRemove) Call() {
 	ret := make(chan ProcGroupRemoveReturn, 1)
+	msg.proc.retChRemove = ret
 	go func(ret chan ProcGroupRemoveReturn) {
 		found := msg.proc.handleRemove(msg.p)
+		msg.proc.retChRemove = nil
 		ret <- ProcGroupRemoveReturn{found}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -284,12 +310,15 @@ type ProcGroupEnvelopeFindProcByConnection struct {
 
 func (msg ProcGroupEnvelopeFindProcByConnection) Call() {
 	ret := make(chan ProcGroupFindProcByConnectionReturn, 1)
+	msg.proc.retChFindProcByConnection = ret
 	go func(ret chan ProcGroupFindProcByConnectionReturn) {
 		retval0 := msg.proc.handleFindProcByConnection(msg.w)
+		msg.proc.retChFindProcByConnection = nil
 		ret <- ProcGroupFindProcByConnectionReturn{retval0}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -334,12 +363,15 @@ type ProcGroupEnvelopeGet struct {
 
 func (msg ProcGroupEnvelopeGet) Call() {
 	ret := make(chan ProcGroupGetReturn, 1)
+	msg.proc.retChGet = ret
 	go func(ret chan ProcGroupGetReturn) {
 		retval0 := msg.proc.handleGet()
+		msg.proc.retChGet = nil
 		ret <- ProcGroupGetReturn{retval0}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -384,12 +416,15 @@ type ProcGroupEnvelopeGetForRemoval struct {
 
 func (msg ProcGroupEnvelopeGetForRemoval) Call() {
 	ret := make(chan ProcGroupGetForRemovalReturn, 1)
+	msg.proc.retChGetForRemoval = ret
 	go func(ret chan ProcGroupGetForRemovalReturn) {
 		retval0 := msg.proc.handleGetForRemoval()
+		msg.proc.retChGetForRemoval = nil
 		ret <- ProcGroupGetForRemovalReturn{retval0}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -434,12 +469,15 @@ type ProcGroupEnvelopeGetAll struct {
 
 func (msg ProcGroupEnvelopeGetAll) Call() {
 	ret := make(chan ProcGroupGetAllReturn, 1)
+	msg.proc.retChGetAll = ret
 	go func(ret chan ProcGroupGetAllReturn) {
 		retval0 := msg.proc.handleGetAll()
+		msg.proc.retChGetAll = nil
 		ret <- ProcGroupGetAllReturn{retval0}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -484,12 +522,15 @@ type ProcGroupEnvelopeSize struct {
 
 func (msg ProcGroupEnvelopeSize) Call() {
 	ret := make(chan ProcGroupSizeReturn, 1)
+	msg.proc.retChSize = ret
 	go func(ret chan ProcGroupSizeReturn) {
 		retval0 := msg.proc.handleSize()
+		msg.proc.retChSize = nil
 		ret <- ProcGroupSizeReturn{retval0}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -534,12 +575,15 @@ type ProcGroupEnvelopeShutdown struct {
 
 func (msg ProcGroupEnvelopeShutdown) Call() {
 	ret := make(chan ProcGroupShutdownReturn, 1)
+	msg.proc.retChShutdown = ret
 	go func(ret chan ProcGroupShutdownReturn) {
 		msg.proc.handleShutdown()
+		msg.proc.retChShutdown = nil
 		ret <- ProcGroupShutdownReturn{}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)

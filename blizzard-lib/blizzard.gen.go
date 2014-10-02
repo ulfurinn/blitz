@@ -5,8 +5,13 @@ import "time"
 import "bitbucket.org/ulfurinn/gen_proc"
 
 type BlizzardCh struct {
-	chMsg  chan gen_proc.ProcCall
-	chStop chan struct{}
+	chMsg             chan gen_proc.ProcCall
+	retChGenCall      chan BlizzardGenCallReturn
+	retChCommand      chan BlizzardCommandReturn
+	retChCleanup      chan BlizzardCleanupReturn
+	retChWorkerClosed chan BlizzardWorkerClosedReturn
+	retChSnapshot     chan BlizzardSnapshotReturn
+	chStop            chan struct{}
 }
 
 func NewBlizzardCh() *BlizzardCh {
@@ -29,12 +34,15 @@ type BlizzardEnvelopeGenCall struct {
 
 func (msg BlizzardEnvelopeGenCall) Call() {
 	ret := make(chan BlizzardGenCallReturn, 1)
+	msg.proc.retChGenCall = ret
 	go func(ret chan BlizzardGenCallReturn) {
 		genret := msg.proc.handleGenCall(msg.f)
+		msg.proc.retChGenCall = nil
 		ret <- BlizzardGenCallReturn{genret}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -79,12 +87,15 @@ type BlizzardEnvelopeCommand struct {
 
 func (msg BlizzardEnvelopeCommand) Call() {
 	ret := make(chan BlizzardCommandReturn, 1)
+	msg.proc.retChCommand = ret
 	go func(ret chan BlizzardCommandReturn) {
 		retval0 := msg.proc.handleCommand(msg.cmd)
+		msg.proc.retChCommand = nil
 		ret <- BlizzardCommandReturn{retval0}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -129,12 +140,15 @@ type BlizzardEnvelopeCleanup struct {
 
 func (msg BlizzardEnvelopeCleanup) Call() {
 	ret := make(chan BlizzardCleanupReturn, 1)
+	msg.proc.retChCleanup = ret
 	go func(ret chan BlizzardCleanupReturn) {
 		msg.proc.handleCleanup()
+		msg.proc.retChCleanup = nil
 		ret <- BlizzardCleanupReturn{}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -176,12 +190,15 @@ type BlizzardEnvelopeWorkerClosed struct {
 
 func (msg BlizzardEnvelopeWorkerClosed) Call() {
 	ret := make(chan BlizzardWorkerClosedReturn, 1)
+	msg.proc.retChWorkerClosed = ret
 	go func(ret chan BlizzardWorkerClosedReturn) {
 		msg.proc.handleWorkerClosed(msg.w)
+		msg.proc.retChWorkerClosed = nil
 		ret <- BlizzardWorkerClosedReturn{}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
@@ -223,12 +240,15 @@ type BlizzardEnvelopeSnapshot struct {
 
 func (msg BlizzardEnvelopeSnapshot) Call() {
 	ret := make(chan BlizzardSnapshotReturn, 1)
+	msg.proc.retChSnapshot = ret
 	go func(ret chan BlizzardSnapshotReturn) {
 		msg.proc.handleSnapshot(msg.f)
+		msg.proc.retChSnapshot = nil
 		ret <- BlizzardSnapshotReturn{}
 	}(ret)
 	select {
 	case result := <-ret:
+
 		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
