@@ -256,7 +256,9 @@ func (b *Blizzard) writeConfig() {
 func (b *Blizzard) readConfig() {
 	f, err := os.Open(configPath)
 	if err != nil {
-		log("[blizzard] %v\n", err)
+		if !os.IsNotExist(err) {
+			log("[blizzard] %v\n", err)
+		}
 		return
 	}
 	defer f.Close()
