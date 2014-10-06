@@ -119,7 +119,7 @@ func (i *Process) handleCleanupProcess() {
 		i.inspect()
 		i.cmd.Wait()
 		err := os.Remove(i.Address) // SIGKILL won't leave a change to clean this up
-		if err != nil {
+		if err != nil && !os.IsNotExist(err) {
 			log("[proc %p] error cleaning up domain socket %v\n", i, i.Address)
 		}
 		i.inspectDispose()
