@@ -52,6 +52,9 @@ func (c *Cli) Run() {
 				cli.BoolFlag{Name: "kill"},
 			},
 		}},
+	}, {
+		Name:   "proc-stats",
+		Action: c.ProcStats,
 	}}
 
 	app.Run(os.Args)
@@ -121,6 +124,23 @@ func (c *Cli) ListApps(ctx *cli.Context) {
 	for _, app := range resp.Executables {
 		fmt.Println(app)
 	}
+}
+
+func (c *Cli) ProcStats(ctx *cli.Context) {
+	cmd := ProcStatCommand{Command{Type: "proc-stats"}}
+	err := c.send(cmd)
+	if err != nil {
+		fatal(err)
+	}
+	var resp ProcStatResponse
+	err = c.GetResponse(&resp)
+	if err != nil {
+		fatal(err)
+	}
+	if resp.Error != nil {
+		fatal(fmt.Errorf(*resp.Error))
+	}
+	fmt.Printf("apps %d\nproc-groups %d\nprocs %d\n", resp.Apps, resp.ProcGroups, resp.Procs)
 }
 
 func (c *Cli) Takeover(ctx *cli.Context) {

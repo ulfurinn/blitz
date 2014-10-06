@@ -1,8 +1,13 @@
 //  GENERATED CODE, DO NOT EDIT
 package blizzard
 
-import "time"
+import (
+	"sync/atomic"
+	"time"
+)
 import "bitbucket.org/ulfurinn/gen_proc"
+
+var assetServerProcCounter int32
 
 type assetServerCh struct {
 	chMsg           chan gen_proc.ProcCall
@@ -228,6 +233,8 @@ func (proc *assetServer) BroadcastTimeout(msg interface{}, timeout time.Duration
 }
 
 func (proc *assetServer) Run() {
+	atomic.AddInt32(&assetServerProcCounter, 1)
+	defer atomic.AddInt32(&assetServerProcCounter, -1)
 	for {
 		select {
 		case msg := <-proc.chMsg:

@@ -50,6 +50,10 @@ type ListExecutablesCommand struct {
 	Command
 }
 
+type ProcStatCommand struct {
+	Command
+}
+
 type Response struct {
 	Error *string `json:"error"`
 }
@@ -74,6 +78,13 @@ type RestartTakeoverCommand struct {
 
 type RestartTakeoverResponse struct {
 	Response
+}
+
+type ProcStatResponse struct {
+	Response
+	Apps       int32 `json:"apps"`
+	ProcGroups int32 `json:"procGroups"`
+	Procs      int32 `json:"procs"`
 }
 
 func fatal(err error) {

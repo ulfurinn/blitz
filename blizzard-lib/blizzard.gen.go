@@ -1,11 +1,16 @@
 //  GENERATED CODE, DO NOT EDIT
 package blizzard
 
-import "time"
+import (
+	"sync/atomic"
+	"time"
+)
 import (
 	"bitbucket.org/ulfurinn/blitz"
 	"bitbucket.org/ulfurinn/gen_proc"
 )
+
+var BlizzardProcCounter int32
 
 type BlizzardCh struct {
 	chMsg                  chan gen_proc.ProcCall
@@ -604,6 +609,8 @@ func (proc *Blizzard) SnapshotTimeout(f func(interface{}), timeout time.Duration
 }
 
 func (proc *Blizzard) Run() {
+	atomic.AddInt32(&BlizzardProcCounter, 1)
+	defer atomic.AddInt32(&BlizzardProcCounter, -1)
 	for {
 		select {
 		case msg := <-proc.chMsg:

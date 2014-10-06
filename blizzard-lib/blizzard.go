@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/yaml.v1"
@@ -166,6 +167,12 @@ func (b *Blizzard) Command(cmd workerCommand) interface{} {
 			}
 			return nil
 		})
+		return resp
+	case *blitz.ProcStatCommand:
+		resp := blitz.ProcStatResponse{}
+		resp.Apps = atomic.LoadInt32(&ApplicationProcCounter)
+		resp.ProcGroups = atomic.LoadInt32(&ProcGroupProcCounter)
+		resp.Procs = atomic.LoadInt32(&ProcessProcCounter)
 		return resp
 	case *blitz.RestartTakeoverCommand:
 		resp := blitz.RestartTakeoverResponse{}

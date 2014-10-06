@@ -1,11 +1,16 @@
 //  GENERATED CODE, DO NOT EDIT
 package blizzard
 
-import "time"
+import (
+	"sync/atomic"
+	"time"
+)
 import (
 	"bitbucket.org/ulfurinn/blitz"
 	"bitbucket.org/ulfurinn/gen_proc"
 )
+
+var ProcGroupProcCounter int32
 
 type ProcGroupGen struct {
 	chMsg                     chan gen_proc.ProcCall
@@ -617,6 +622,8 @@ func (proc *ProcGroup) ShutdownTimeout(timeout time.Duration) (gen_proc_err erro
 }
 
 func (proc *ProcGroup) Run() {
+	atomic.AddInt32(&ProcGroupProcCounter, 1)
+	defer atomic.AddInt32(&ProcGroupProcCounter, -1)
 	for {
 		select {
 		case msg := <-proc.chMsg:

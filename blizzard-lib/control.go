@@ -75,6 +75,8 @@ func blitzCommand(typ string) (cmd interface{}) {
 		return &blitz.ListExecutablesCommand{}
 	case "restart-takeover":
 		return &blitz.RestartTakeoverCommand{}
+	case "proc-stats":
+		return &blitz.ProcStatCommand{}
 	}
 	return nil
 }

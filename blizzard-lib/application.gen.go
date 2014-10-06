@@ -1,8 +1,13 @@
 //  GENERATED CODE, DO NOT EDIT
 package blizzard
 
-import "time"
+import (
+	"sync/atomic"
+	"time"
+)
 import "bitbucket.org/ulfurinn/gen_proc"
+
+var ApplicationProcCounter int32
 
 type ApplicationGen struct {
 	chMsg          chan gen_proc.ProcCall
@@ -146,6 +151,8 @@ func (proc *Application) deferBootstrap(f func(func(retval1 error))) (retval0 ge
 }
 
 func (proc *Application) Run() {
+	atomic.AddInt32(&ApplicationProcCounter, 1)
+	defer atomic.AddInt32(&ApplicationProcCounter, -1)
 	for {
 		select {
 		case msg := <-proc.chMsg:
