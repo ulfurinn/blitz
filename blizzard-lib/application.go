@@ -1,65 +1,112 @@
 package blizzard
 
-import "os/exec"
+import (
+	"fmt"
+	"io"
+	"os"
+	"strings"
+
+	"bitbucket.org/ulfurinn/blitz"
+	"bitbucket.org/ulfurinn/gen_proc"
+
+	"os/exec"
+)
 
 type Application struct {
-	Exe          string
-	Adapter      string
-	Config       string
-	Basename     string
-	Tag          string
-	AppName      string
-	Instances    int
-	Obsolete     bool
-	BootstrapCmd *exec.Cmd
-	server       *Blizzard
+	*ApplicationGen `gen_proc:"gen_server"`
+	Exe             string
+	Adapter         string
+	Config          string
+	Basename        string
+	Tag             string
+	AppName         string
+	Instances       int
+	Obsolete        bool
+	BootstrapCmd    *exec.Cmd
+	server          *Blizzard
 }
 
-func (e *Application) release() {
-	log("[exe %s] releasing\n", e.Basename)
-	//os.Rename(e.Exe, fmt.Sprintf("blitz/deploy-old/%s", e.Basename))
-	e.Obsolete = true
+func (app *Application) release() {
+	log("[exe %s] releasing\n", app.Basename)
+	//os.Rename(app.Exe, fmt.Sprintf("blitz/deploy-old/%s", app.Basename))
+	app.Obsolete = true
 }
 
-func (e *Application) bootstrap() error {
-	log("[app %p] bootstrapping binary=%s adapter=%s config=%s\n", e, e.Exe, e.Adapter, e.Config)
-	e.Tag = randstr(32)
-	args := []string{"-bootstrap", "-tag", e.Tag}
-	args = append(args, e.args()...)
-	e.BootstrapCmd = exec.Command(e.executable(), args...)
-	err := e.BootstrapCmd.Start()
-	if err == nil {
-		go e.BootstrapCmd.Wait()
-	} else {
-		log("[app %p] bootstrap failed: %v\n", e, err)
+func (app *Application) handleBootstrap() (gen_proc.Deferred, error) {
+	log("[app %p] bootstrapping binary=%s adapter=%s config=%s\n", app, app.Exe, app.Adapter, app.Config)
+	app.Tag = randstr(32)
+	args := []string{"-bootstrap", "-tag", app.Tag}
+	args = append(args, app.args()...)
+	app.BootstrapCmd = exec.Command(app.executable(), args...)
+	log("[app %p] bootstrap command: %s\n", app, strings.Join(app.BootstrapCmd.Args, " "))
+
+	ok := make(chan *blitz.BootstrapCommand, 1)
+	died := make(chan struct{}, 1)
+
+	procout, _ := app.BootstrapCmd.StdoutPipe()
+	procerr, _ := app.BootstrapCmd.StderrPipe()
+
+	app.server.AddTagCallback(app.Tag, func(cmd interface{}) {
+		log("[app %p] received bootstrap\n", app)
+		ok <- cmd.(*blitz.BootstrapCommand)
+	})
+
+	err := app.BootstrapCmd.Start()
+	if err != nil {
+		log("[app %p] bootstrap failed: %v\n", app, err)
+		app.server.RemoveTagCallback(app.Tag)
+		return false, err
 	}
-	return err
+
+	return app.deferBootstrap(func(ret func(error)) {
+		go func() {
+			go io.Copy(os.Stderr, procout)
+			go io.Copy(os.Stderr, procerr)
+			err := app.BootstrapCmd.Wait()
+			if err != nil {
+				log("[app %p] %v\n", app, err)
+			}
+			died <- struct{}{}
+		}()
+
+		select {
+		case bootstrapped := <-ok:
+			log("[app %p] bootstrap ok\n", app)
+			err := app.server.Bootstrapped(bootstrapped)
+			log("[app %p] spawned: %v; returning from deferred\n", app, err)
+			ret(err)
+		case <-died:
+			err := fmt.Errorf("process died unexpectedly during bootstrap phase")
+			log("[app %p] bootstrap failed: %v\n", app, err)
+			ret(err)
+		}
+	})
 }
 
-func (e *Application) spawn(cb SpawnedCallback) (pg *ProcGroup, err error) {
-	pg = NewProcGroup(e.server, e)
+func (app *Application) spawn(cb SpawnedCallback) (pg *ProcGroup, err error) {
+	pg = NewProcGroup(app.server, app)
 	go pg.Run()
-	err = pg.Spawn(e.Instances, cb)
+	err = pg.Spawn(app.Instances, cb)
 	return
 }
 
-func (e *Application) takeover(old *ProcGroup, cb SpawnedCallback) (pg *ProcGroup) {
-	pg = NewProcGroup(e.server, e)
+func (app *Application) takeover(old *ProcGroup, cb SpawnedCallback, kill bool) (pg *ProcGroup) {
+	pg = NewProcGroup(app.server, app)
 	go pg.Run()
-	go pg.Takeover(old, cb)
+	go pg.Takeover(old, cb, kill)
 	return
 }
 
-func (e *Application) executable() string {
-	if e.Exe != "" {
-		return e.Exe
+func (app *Application) executable() string {
+	if app.Exe != "" {
+		return app.Exe
 	}
-	return "blitz-adapter-" + e.Adapter
+	return "blitz-adapter-" + app.Adapter
 }
 
-func (e *Application) args() []string {
-	if e.Exe != "" {
+func (app *Application) args() []string {
+	if app.Exe != "" {
 		return []string{}
 	}
-	return []string{"-config", e.Config}
+	return []string{"-config", app.Config}
 }

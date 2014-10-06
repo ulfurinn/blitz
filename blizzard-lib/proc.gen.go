@@ -133,8 +133,8 @@ func (proc *Process) AnnouncedTimeout(cmd *blitz.AnnounceCommand, w *WorkerConne
 
 type ProcessEnvelopeShutdown struct {
 	proc *Process
-
-	ret chan ProcessShutdownReturn
+	kill bool
+	ret  chan ProcessShutdownReturn
 	gen_proc.Envelope
 }
 
@@ -142,7 +142,7 @@ func (msg ProcessEnvelopeShutdown) Call() {
 	ret := make(chan ProcessShutdownReturn, 1)
 	msg.proc.retChShutdown = ret
 	go func(ret chan ProcessShutdownReturn) {
-		msg.proc.handleShutdown()
+		msg.proc.handleShutdown(msg.kill)
 		msg.proc.retChShutdown = nil
 		ret <- ProcessShutdownReturn{}
 	}(ret)
@@ -160,8 +160,8 @@ type ProcessShutdownReturn struct {
 }
 
 // Shutdown is a gen_server interface method.
-func (proc *Process) Shutdown() {
-	envelope := ProcessEnvelopeShutdown{proc, make(chan ProcessShutdownReturn, 1), gen_proc.Envelope{0}}
+func (proc *Process) Shutdown(kill bool) {
+	envelope := ProcessEnvelopeShutdown{proc, kill, make(chan ProcessShutdownReturn, 1), gen_proc.Envelope{0}}
 	proc.chMsg <- envelope
 	<-envelope.ret
 
@@ -169,8 +169,8 @@ func (proc *Process) Shutdown() {
 }
 
 // ShutdownTimeout is a gen_server interface method.
-func (proc *Process) ShutdownTimeout(timeout time.Duration) (gen_proc_err error) {
-	envelope := ProcessEnvelopeShutdown{proc, make(chan ProcessShutdownReturn, 1), gen_proc.Envelope{timeout}}
+func (proc *Process) ShutdownTimeout(kill bool, timeout time.Duration) (gen_proc_err error) {
+	envelope := ProcessEnvelopeShutdown{proc, kill, make(chan ProcessShutdownReturn, 1), gen_proc.Envelope{timeout}}
 	proc.chMsg <- envelope
 	_, ok := <-envelope.ret
 	if !ok {

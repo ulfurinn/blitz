@@ -3,6 +3,7 @@ package blizzard
 import (
 	"net/http"
 	"net/http/httputil"
+	"os"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -89,12 +90,18 @@ func (i *Process) handleAnnounced(cmd *blitz.AnnounceCommand, w *WorkerConnectio
 	}
 }
 
-func (i *Process) handleShutdown() {
+func (i *Process) handleShutdown(kill bool) {
 	if i.cmd != nil {
-		log("[proc %p] shutting down process %d\n", i, i.cmd.Process.Pid)
+		var sig os.Signal
+		if kill {
+			sig = syscall.SIGKILL
+		} else {
+			sig = syscall.SIGTERM
+		}
+		log("[proc %p] shutting down process %d using %v\n", i, i.cmd.Process.Pid, sig)
 		i.state = "shutting-down"
 		i.inspect()
-		i.cmd.Process.Signal(syscall.SIGTERM)
+		i.cmd.Process.Signal(sig)
 	}
 }
 
@@ -111,6 +118,10 @@ func (i *Process) handleCleanupProcess() {
 		i.state = "collecting"
 		i.inspect()
 		i.cmd.Wait()
+		err := os.Remove(i.Address) // SIGKILL won't leave a change to clean this up
+		if err != nil {
+			log("[proc %p] error cleaning up domain socket %v\n", i, i.Address)
+		}
 		i.inspectDispose()
 		i.cmd = nil
 	}

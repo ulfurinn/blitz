@@ -103,7 +103,7 @@ func (pg *ProcGroup) handleAnnounced(p *Process, cmd *blitz.AnnounceCommand, w *
 
 	p.Announced(cmd, w)
 	if pg.ShuttingDown {
-		p.Shutdown()
+		p.Shutdown(false)
 		p.CleanupProcess()
 		p.Stop()
 		return
@@ -201,7 +201,7 @@ func (pg *ProcGroup) handleSize() int {
 	return len(pg.Procs)
 }
 
-func (pg *ProcGroup) Takeover(old *ProcGroup, cb SpawnedCallback) {
+func (pg *ProcGroup) Takeover(old *ProcGroup, cb SpawnedCallback, kill bool) {
 	log("[procgroup %p] starting takeover\n", pg)
 	pg.state = "takeover"
 	pg.inspect()
@@ -246,7 +246,7 @@ func (pg *ProcGroup) Takeover(old *ProcGroup, cb SpawnedCallback) {
 				oldProc := old.GetForRemoval()
 				if oldProc != nil {
 					oldProc.busyWg.Wait()
-					oldProc.Shutdown()
+					oldProc.Shutdown(kill)
 				}
 				procCh <- struct{}{}
 			},
@@ -276,7 +276,7 @@ func (pg *ProcGroup) handleShutdown() {
 		pg.state = "shutdown"
 		pg.inspect()
 		for _, p := range pg.Procs {
-			p.Shutdown()
+			p.Shutdown(false)
 		}
 	}()
 }

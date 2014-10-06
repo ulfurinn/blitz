@@ -47,7 +47,10 @@ func (c *Cli) Run() {
 		Subcommands: []cli.Command{{
 			Name:   "takeover",
 			Action: c.Takeover,
-			Flags:  []cli.Flag{cli.StringFlag{Name: "app"}},
+			Flags: []cli.Flag{
+				cli.StringFlag{Name: "app"},
+				cli.BoolFlag{Name: "kill"},
+			},
 		}},
 	}}
 
@@ -125,7 +128,7 @@ func (c *Cli) Takeover(ctx *cli.Context) {
 	if app == "" {
 		fatal(fmt.Errorf("restart requires an app name"))
 	}
-	cmd := RestartTakeoverCommand{Command{Type: "restart-takeover"}, app}
+	cmd := RestartTakeoverCommand{Command{Type: "restart-takeover"}, app, ctx.Bool("kill")}
 	resp := RestartTakeoverResponse{}
 	err := c.callBlizzard(cmd, &resp)
 	if err != nil {

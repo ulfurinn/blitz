@@ -28,6 +28,8 @@ type BlizzardConfig struct {
 	Executables []ExeConfig
 }
 
+type tagCallbackSet map[string]func(interface{})
+
 type Blizzard struct {
 	*BlizzardCh `gen_proc:"gen_server"`
 	config      BlizzardConfig
@@ -40,6 +42,7 @@ type Blizzard struct {
 	tplErr      error
 	cleanup     *time.Timer
 	inspect     func(interface{})
+	callbacks   tagCallbackSet
 }
 
 type workerCommand struct {
@@ -53,6 +56,7 @@ func NewBlizzard() *Blizzard {
 	b := &Blizzard{
 		BlizzardCh: NewBlizzardCh(),
 		routers:    NewRouteSet(),
+		callbacks:  make(tagCallbackSet),
 	}
 	static, err := NewAssetServer(b)
 	if err != nil {
@@ -66,6 +70,14 @@ func NewBlizzard() *Blizzard {
 func (b *Blizzard) Start() {
 	blitz.CreateDirectoryStructure()
 	b.readConfig()
+	b.cleanup = time.NewTimer(time.Second)
+	b.cleanup.Stop()
+	go func() {
+		for {
+			<-b.cleanup.C
+			b.Cleanup()
+		}
+	}()
 	listener, err := net.Listen("unix", blitz.ControlAddress())
 	if err != nil {
 		fatal(err)
@@ -75,19 +87,12 @@ func (b *Blizzard) Start() {
 	go b.Run()
 	go b.static.HTTP()
 	go b.static.Run()
+	go b.processControl(listener)
 	err = b.bootAllDeployed()
 	if err != nil {
 		fatal(err)
 	}
-	b.cleanup = time.NewTimer(time.Second)
-	b.cleanup.Stop()
-	go func() {
-		for {
-			<-b.cleanup.C
-			b.Cleanup()
-		}
-	}()
-	b.processControl(listener)
+	select {}
 }
 
 func (b *Blizzard) HTTP() {
@@ -128,31 +133,43 @@ func (b *Blizzard) processControl(listener net.Listener) {
 	}
 }
 
-func (b *Blizzard) handleCommand(cmd workerCommand) interface{} {
+func (b *Blizzard) Command(cmd workerCommand) interface{} {
+	log("[blizzard] command: %v\n", reflect.TypeOf(cmd.command))
 	switch command := cmd.command.(type) {
 	case *blitz.AnnounceCommand:
-		b.announce(command, cmd.WorkerConnection)
+		b.Announce(command, cmd.WorkerConnection)
 		return blitz.Response{}
 	case *blitz.DeployCommand:
 		resp := blitz.Response{}
-		err := b.deploy(command)
+		app, err := b.Deploy(command)
+		if err != nil {
+			resp.Error = new(string)
+			*resp.Error = err.Error()
+			return resp
+		}
+		log("[blizzard] deployed, bootstrapping\n")
+		err = app.Bootstrap()
+		log("[blizzard] bootstrap return")
 		if err != nil {
 			resp.Error = new(string)
 			*resp.Error = err.Error()
 		}
 		return resp
 	case *blitz.BootstrapCommand:
-		b.bootstrapped(command)
+		b.RunTagCallback(command.BinaryTag, command)
 		return blitz.Response{}
 	case *blitz.ListExecutablesCommand:
 		resp := blitz.ListExecutablesResponse{Executables: []string{}}
-		for _, app := range b.apps {
-			resp.Executables = append(resp.Executables, app.AppName)
-		}
+		b.GenCall(func() interface{} {
+			for _, app := range b.apps {
+				resp.Executables = append(resp.Executables, app.AppName)
+			}
+			return nil
+		})
 		return resp
 	case *blitz.RestartTakeoverCommand:
 		resp := blitz.RestartTakeoverResponse{}
-		err := b.takeover(command.App)
+		err := b.Takeover(command.App, command.Kill)
 		if err != nil {
 			e := err.Error()
 			resp.Error = &e
@@ -166,7 +183,23 @@ func (b *Blizzard) handleCommand(cmd workerCommand) interface{} {
 	}
 }
 
-func (b *Blizzard) announce(cmd *blitz.AnnounceCommand, worker *WorkerConnection) {
+func (b *Blizzard) handleAddTagCallback(tag string, cb func(interface{})) {
+	b.callbacks[tag] = cb
+}
+
+func (b *Blizzard) handleRemoveTagCallback(tag string) {
+	delete(b.callbacks, tag)
+}
+
+func (b *Blizzard) handleRunTagCallback(tag string, data interface{}) {
+	cb, ok := b.callbacks[tag]
+	delete(b.callbacks, tag)
+	if ok {
+		cb(data)
+	}
+}
+
+func (b *Blizzard) handleAnnounce(cmd *blitz.AnnounceCommand, worker *WorkerConnection) {
 	procGroup, proc := b.findProcByTag(cmd.Tag)
 	if proc == nil {
 		log("[blizzard] no matching proc found for tag %s\n", cmd.Tag)
@@ -178,9 +211,12 @@ func (b *Blizzard) announce(cmd *blitz.AnnounceCommand, worker *WorkerConnection
 	//	TODO; what to do in case of patch mismatch?
 }
 
-func (b *Blizzard) deploy(cmd *blitz.DeployCommand) error {
+func (b *Blizzard) handleDeploy(cmd *blitz.DeployCommand) (*Application, error) {
 
-	app := &Application{server: b}
+	app := &Application{
+		ApplicationGen: NewApplicationGen(),
+		server:         b,
+	}
 
 	if cmd.Application != "" {
 		components := strings.Split(cmd.Application, string(os.PathSeparator))
@@ -189,23 +225,23 @@ func (b *Blizzard) deploy(cmd *blitz.DeployCommand) error {
 		command := fmt.Sprintf("blitz/deploy/%s", deployedName)
 		origin, err := os.Open(cmd.Application)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		newfile, err := os.Create(command)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		err = os.Chmod(command, 0775)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		_, err = io.Copy(newfile, origin)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		err = newfile.Close()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		app.Exe = command
 		app.Basename = filepath.Base(command)
@@ -216,7 +252,8 @@ func (b *Blizzard) deploy(cmd *blitz.DeployCommand) error {
 
 	b.apps = append(b.apps, app)
 	b.addExeConfig(app)
-	return app.bootstrap()
+	go app.Run()
+	return app, nil
 }
 
 func (b *Blizzard) addExeConfig(app *Application) {
@@ -274,11 +311,12 @@ func (b *Blizzard) readConfig() {
 	}
 }
 
-func (b *Blizzard) bootstrapped(cmd *blitz.BootstrapCommand) {
+func (b *Blizzard) handleBootstrapped(cmd *blitz.BootstrapCommand) error {
+	log("[blizzard] bootstrapped, spawning\n")
 	app := b.findExeByTag(cmd.BinaryTag)
 	if app == nil {
 		log("[blizzard] no matching binary for tag %s\n", cmd.BinaryTag)
-		return
+		return fmt.Errorf("unknown tag %s", cmd.BinaryTag)
 	}
 	log("[blizzard] bootstrapped %p: %d instances of %s\n", app, cmd.Instances, cmd.AppName)
 	app.Instances = cmd.Instances
@@ -289,9 +327,11 @@ func (b *Blizzard) bootstrapped(cmd *blitz.BootstrapCommand) {
 	} else {
 		log("[blizzard] while spawning: %v\n, err")
 	}
+	log("[blizzard] spawned\n")
+	return err
 }
 
-func (b *Blizzard) takeover(app string) (err error) {
+func (b *Blizzard) handleTakeover(app string, kill bool) (err error) {
 	e := b.findAppByName(app)
 	if e == nil {
 		return fmt.Errorf("unknown app: %s", app)
@@ -300,7 +340,7 @@ func (b *Blizzard) takeover(app string) (err error) {
 	if e == nil {
 		return fmt.Errorf("no proc group for app: %s", app)
 	}
-	newPg := e.takeover(pg, b.mount)
+	newPg := e.takeover(pg, b.mount, kill)
 	b.procGroups = append(b.procGroups, newPg)
 	return
 }
@@ -324,16 +364,17 @@ func (b *Blizzard) mount(proc *ProcGroup) {
 
 func (b *Blizzard) bootAllDeployed() error {
 	for _, c := range b.config.Executables {
-		e := &Application{server: b}
+		app := &Application{ApplicationGen: NewApplicationGen(), server: b}
+		go app.Run()
 		if c.Type == "native" {
-			e.Basename = c.Binary
-			e.Exe = fmt.Sprintf("blitz/deploy/%s", c.Binary)
+			app.Basename = c.Binary
+			app.Exe = fmt.Sprintf("blitz/deploy/%s", c.Binary)
 		} else {
-			e.Adapter = c.Type
-			e.Config = c.Config
+			app.Adapter = c.Type
+			app.Config = c.Config
 		}
-		b.apps = append(b.apps, e)
-		if err := e.bootstrap(); err != nil {
+		b.apps = append(b.apps, app)
+		if err := app.Bootstrap(); err != nil {
 			return err
 		}
 	}

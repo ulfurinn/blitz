@@ -68,7 +68,8 @@ type ListExecutablesResponse struct {
 
 type RestartTakeoverCommand struct {
 	Command
-	App string `json:"app"`
+	App  string `json:"app"`
+	Kill bool   `json:"kill"`
 }
 
 type RestartTakeoverResponse struct {

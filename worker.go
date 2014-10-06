@@ -110,6 +110,12 @@ func (w *Worker) send(data interface{}) error {
 	return encoder.Encode(data)
 }
 
+func (w *Worker) recv() (resp json.RawMessage, err error) {
+	decoder := json.NewDecoder(w.conn)
+	err = decoder.Decode(&resp)
+	return
+}
+
 func (w *Worker) bootstrap() error {
 	cmd := BootstrapCommand{}
 	cmd.Type = "bootstrap"
@@ -124,7 +130,12 @@ func (w *Worker) bootstrap() error {
 	if cmd.Instances == 0 {
 		cmd.Instances = 1
 	}
-	return w.send(cmd)
+	err := w.send(cmd)
+	if err != nil {
+		return err
+	}
+	_, err = w.recv()
+	return err
 }
 
 func (w *Worker) announce() error {

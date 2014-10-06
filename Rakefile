@@ -8,6 +8,7 @@ end
 
 desc "Build"
 task :default do
+  sh "go install bitbucket.org/ulfurinn/gen_proc/gen_proc"
   procs.each do |pr|
     sh "bin/gen_proc #{pr}"
   end
