@@ -207,6 +207,7 @@ func (b *Blizzard) handleAnnounce(cmd *blitz.AnnounceCommand, worker *WorkerConn
 	}
 	log("[blizzard] announce from proc group %p proc %p\n", procGroup, proc)
 	worker.monitor = b
+	log("[blizzard] announced paths: %v\n", cmd.Paths)
 	procGroup.Announced(proc, cmd, worker)
 	//	TODO; what to do in case of patch mismatch?
 }
@@ -323,6 +324,7 @@ func (b *Blizzard) handleBootstrapped(cmd *blitz.BootstrapCommand) error {
 	app.AppName = cmd.AppName
 	pg, err := app.spawn(b.mount)
 	if err == nil {
+		app.inspect()
 		b.procGroups = append(b.procGroups, pg)
 	} else {
 		log("[blizzard] while spawning: %v\n, err")
@@ -530,7 +532,7 @@ func (b *Blizzard) handleSnapshot(f func(interface{})) {
 			flat := router.snapshot()
 			for _, r := range flat {
 				r.Version = v
-				f(map[string]interface{}{"type": "add-route", "data": r})
+				f(map[string]interface{}{"type": "add-route", "pathSpec": r})
 			}
 		}
 	})

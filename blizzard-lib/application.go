@@ -32,6 +32,13 @@ func (app *Application) release() {
 	app.Obsolete = true
 }
 
+func (app *Application) inspect() {
+	app.server.inspect(AppInspect(app))
+}
+func (app *Application) inspectDispose() {
+	app.server.inspect(AppInspectDispose(app))
+}
+
 func (app *Application) handleBootstrap() (gen_proc.Deferred, error) {
 	log("[app %p] bootstrapping binary=%s adapter=%s config=%s\n", app, app.Exe, app.Adapter, app.Config)
 	app.Tag = randstr(32)

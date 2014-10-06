@@ -183,6 +183,14 @@ func (a *assetServer) handleBroadcast(msg interface{}) {
 	}
 }
 
+type AppMessage struct {
+	Type    string  `json:"type"`
+	ID      uintptr `json:"id"`
+	Name    string  `json:"name"`
+	AppType string  `json:"appType"`
+	AppExe  string  `json:"exe"`
+}
+
 type ProcGroupMessage struct {
 	Type          string  `json:"type"`
 	ID            uintptr `json:"id"`
@@ -200,6 +208,25 @@ type ProcMessage struct {
 	PGID    uintptr `json:"group"`
 	State   string  `json:"state"`
 	Address string  `json:"address"`
+}
+
+func AppInspect(app *Application) (m AppMessage) {
+	m.Type = "app"
+	m.ID = uintptr(unsafe.Pointer(app))
+	m.Name = app.AppName
+	if app.Adapter == "" {
+		m.AppType = "native"
+		m.AppExe = app.Exe
+	} else {
+		m.AppType = app.Adapter
+		m.AppExe = app.Config
+	}
+	return
+}
+func AppInspectDispose(app *Application) (m AppMessage) {
+	m.Type = "app-dispose"
+	m.ID = uintptr(unsafe.Pointer(app))
+	return
 }
 
 func ProcGroupInspect(pg *ProcGroup) ProcGroupMessage {

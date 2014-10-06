@@ -65,10 +65,18 @@
                 <h2>Apps</h2>
                 <table>
                     <tr>
+                        <th>ID</th>
                         <th>Name</th>
                         <th>Type</th>
                         <th>Config/Binary</th>
                         <th>Actions</th>
+                    </tr>
+                    <tr ng-repeat="(id, app) in apps" class="app">
+                        <td>{{app.id}}</td>
+                        <td>{{app.name}}</td>
+                        <td>{{app.appType}}</td>
+                        <td>{{app.exe}}</td>
+                        <td></td>
                     </tr>
                 </table>
             </div>

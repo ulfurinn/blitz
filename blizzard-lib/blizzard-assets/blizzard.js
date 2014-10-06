@@ -7,9 +7,24 @@ app.controller("BlizzardCtl", ["$scope", function($scope){
     $scope.wsOn = false;
     $scope.routes = [];
     $scope.procGroups = {};
+    $scope.apps = {};
 
     $scope.addRoute = function(route) {
-        $scope.routes.push(route);
+        $scope.routes.push(route.pathSpec);
+    };
+
+    $scope.updateApp = function(app) {
+        if( $scope.apps[app.id] ) {
+            for( var p in app ) {
+                $scope.apps[app.id][p] = app[p];
+            }
+        } else {
+            $scope.apps[app.id] = app;
+        }
+    };
+
+    $scope.deleteApp = function(app) {
+        delete $scope.apps[app.id];
     };
 
     $scope.updateProcGroup = function(pg) {
@@ -80,7 +95,13 @@ app.controller("BlizzardCtl", ["$scope", function($scope){
         $scope.$apply(function(){
             switch(data.type) {
                 case "add-route":
-                    $scope.addRoute(data.data);
+                    $scope.addRoute(data);
+                    break;
+                case "app":
+                    $scope.updateApp(data);
+                    break;
+                case "app-dispose":
+                    $scope.deleteApp(data);
                     break;
                 case "proc-group":
                     $scope.updateProcGroup(data);
