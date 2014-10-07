@@ -59,7 +59,7 @@ func (pg *ProcGroup) Spawn(count int, cb SpawnedCallback) (err error) {
 	for i := 0; i < count; i++ {
 		p := &Process{ProcessGen: NewProcessGen(), server: pg.server, group: pg, tag: randstr(32), announceCb: func(i *Process, ok bool) { spawnWg.Done() }}
 		log("[procgroup %p] spawning proc %p\n", pg, p)
-		pg.handleAdd(p)
+		pg.Add(p)
 		p.Exec()
 	}
 	go func() {
@@ -130,7 +130,7 @@ func removeProc(index int, list []*Process) (result []*Process) {
 	return
 }
 
-func (pg *ProcGroup) handleRemove(p *Process) (found bool) {
+func (pg *ProcGroup) handleRemoveProc(p *Process) (found bool) {
 
 	index, found := findProc(p, pg.Procs)
 	if found {

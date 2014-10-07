@@ -18,7 +18,7 @@ type ProcGroupGen struct {
 	retChIsReady              chan ProcGroupIsReadyReturn
 	retChAdd                  chan ProcGroupAddReturn
 	retChAnnounced            chan ProcGroupAnnouncedReturn
-	retChRemove               chan ProcGroupRemoveReturn
+	retChRemoveProc           chan ProcGroupRemoveProcReturn
 	retChFindProcByConnection chan ProcGroupFindProcByConnectionReturn
 	retChGet                  chan ProcGroupGetReturn
 	retChGetForRemoval        chan ProcGroupGetForRemovalReturn
@@ -253,20 +253,20 @@ func (proc *ProcGroup) AnnouncedTimeout(p *Process, cmd *blitz.AnnounceCommand, 
 	return
 }
 
-type ProcGroupEnvelopeRemove struct {
+type ProcGroupEnvelopeRemoveProc struct {
 	proc *ProcGroup
 	p    *Process
-	ret  chan ProcGroupRemoveReturn
+	ret  chan ProcGroupRemoveProcReturn
 	gen_proc.Envelope
 }
 
-func (msg ProcGroupEnvelopeRemove) Call() {
-	ret := make(chan ProcGroupRemoveReturn, 1)
-	msg.proc.retChRemove = ret
-	go func(ret chan ProcGroupRemoveReturn) {
-		found := msg.proc.handleRemove(msg.p)
-		msg.proc.retChRemove = nil
-		ret <- ProcGroupRemoveReturn{found}
+func (msg ProcGroupEnvelopeRemoveProc) Call() {
+	ret := make(chan ProcGroupRemoveProcReturn, 1)
+	msg.proc.retChRemoveProc = ret
+	go func(ret chan ProcGroupRemoveProcReturn) {
+		found := msg.proc.handleRemoveProc(msg.p)
+		msg.proc.retChRemoveProc = nil
+		ret <- ProcGroupRemoveProcReturn{found}
 	}(ret)
 	select {
 	case result := <-ret:
@@ -278,13 +278,13 @@ func (msg ProcGroupEnvelopeRemove) Call() {
 
 }
 
-type ProcGroupRemoveReturn struct {
+type ProcGroupRemoveProcReturn struct {
 	found bool
 }
 
-// Remove is a gen_server interface method.
-func (proc *ProcGroup) Remove(p *Process) (found bool) {
-	envelope := ProcGroupEnvelopeRemove{proc, p, make(chan ProcGroupRemoveReturn, 1), gen_proc.Envelope{0}}
+// RemoveProc is a gen_server interface method.
+func (proc *ProcGroup) RemoveProc(p *Process) (found bool) {
+	envelope := ProcGroupEnvelopeRemoveProc{proc, p, make(chan ProcGroupRemoveProcReturn, 1), gen_proc.Envelope{0}}
 	proc.chMsg <- envelope
 	retval := <-envelope.ret
 	found = retval.found
@@ -292,9 +292,9 @@ func (proc *ProcGroup) Remove(p *Process) (found bool) {
 	return
 }
 
-// RemoveTimeout is a gen_server interface method.
-func (proc *ProcGroup) RemoveTimeout(p *Process, timeout time.Duration) (found bool, gen_proc_err error) {
-	envelope := ProcGroupEnvelopeRemove{proc, p, make(chan ProcGroupRemoveReturn, 1), gen_proc.Envelope{timeout}}
+// RemoveProcTimeout is a gen_server interface method.
+func (proc *ProcGroup) RemoveProcTimeout(p *Process, timeout time.Duration) (found bool, gen_proc_err error) {
+	envelope := ProcGroupEnvelopeRemoveProc{proc, p, make(chan ProcGroupRemoveProcReturn, 1), gen_proc.Envelope{timeout}}
 	proc.chMsg <- envelope
 	retval, ok := <-envelope.ret
 	if !ok {

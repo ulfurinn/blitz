@@ -471,6 +471,8 @@ func (b *Blizzard) removeGroup(pg *ProcGroup) {
 		index, found := findProcGroup(pg, b.procGroups)
 		if found {
 			b.procGroups = removeProcGroup(index, b.procGroups)
+			pg.busyWg.Wait()
+			pg.Stop()
 		}
 		b.scheduleCleanup()
 	})
@@ -517,7 +519,7 @@ func (b *Blizzard) handleWorkerClosed(w *WorkerConnection) {
 	if i == nil {
 		return
 	}
-	pg.Remove(i)
+	pg.RemoveProc(i)
 }
 
 func (b *Blizzard) handleSnapshot(f func(interface{})) {
