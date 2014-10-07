@@ -53,10 +53,10 @@ func api() http.Handler {
 }
 
 func ok() (int, string) {
-	return 200, "blitz!"
+	return 200, "blitz!\n"
 }
 
 func sleep() (int, string) {
 	time.Sleep(10 * time.Second)
-	return 200, "blitz!"
+	return 200, "blitz!\n"
 }
