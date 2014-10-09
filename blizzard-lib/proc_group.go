@@ -130,24 +130,24 @@ func removeProc(index int, list []*Process) (result []*Process) {
 	return
 }
 
-func (pg *ProcGroup) handleRemoveProc(p *Process) (found bool) {
-
-	index, found := findProc(p, pg.Procs)
+func findAndRemoveProcInList(p *Process, list *[]*Process) (found bool) {
+	var index int
+	index, found = findProc(p, *list)
 	if found {
-		pg.Procs = removeProc(index, pg.Procs)
+		*list = removeProc(index, *list)
 		go func() {
 			p.CleanupProcess()
 			p.Stop()
 		}()
 	}
+	return
+}
 
-	index, found = findProc(p, pg.RemovedProcs)
-	if found {
-		pg.RemovedProcs = removeProc(index, pg.RemovedProcs)
-		go func() {
-			p.CleanupProcess()
-			p.Stop()
-		}()
+func (pg *ProcGroup) handleRemoveProc(p *Process) (found bool) {
+
+	found = findAndRemoveProcInList(p, &pg.Procs)
+	if !found {
+		found = findAndRemoveProcInList(p, &pg.RemovedProcs)
 	}
 
 	if len(pg.Procs) == 0 {
