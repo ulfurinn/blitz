@@ -6,7 +6,7 @@ import (
 	"net"
 	"os"
 
-	"github.com/codegangsta/cli"
+	"bitbucket.org/ulfurinn/cli"
 )
 
 type Commander struct {
@@ -17,39 +17,34 @@ type Cli struct {
 }
 
 func (c *Cli) Run() {
-	err := c.Connect()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return
-	}
 	app := cli.NewApp()
 	app.Name = "blitz"
 	app.Usage = "blitz/blizzard control utility"
-	app.EnableBashCompletion = true
-	app.Commands = []cli.Command{{
+	app.EnableShellCompletion = true
+	app.Main.Commands = []cli.Command{{
 		Name:      "deploy",
 		Usage:     "Registers a worker with blizzard",
 		ShortName: "d",
 		Action:    c.Deploy,
-		Flags: []cli.Flag{
-			cli.StringFlag{Name: "worker", Usage: "native worker binary"},
-			cli.StringFlag{Name: "adapter", Usage: "foreign worker adapter type"},
-			cli.StringFlag{Name: "config", Usage: "adapter-specific config file"},
+		Options: []cli.Option{
+			cli.StringOption{Name: "worker", Usage: "native worker binary"},
+			cli.StringOption{Name: "adapter", Usage: "foreign worker adapter type"},
+			cli.StringOption{Name: "config", Usage: "adapter-specific config file"},
 		},
 	}, {
 		Name: "list",
-		Subcommands: []cli.Command{{
+		Commands: []cli.Command{{
 			Name:   "apps",
 			Action: c.ListApps,
 		}},
 	}, {
 		Name: "restart",
-		Subcommands: []cli.Command{{
+		Commands: []cli.Command{{
 			Name:   "takeover",
 			Action: c.Takeover,
-			Flags: []cli.Flag{
-				cli.StringFlag{Name: "app"},
-				cli.BoolFlag{Name: "kill"},
+			Options: []cli.Option{
+				cli.StringOption{Name: "app"},
+				//cli.BoolOption{Name: "kill"},
 			},
 		}},
 	}, {
@@ -57,7 +52,10 @@ func (c *Cli) Run() {
 		Action: c.ProcStats,
 	}}
 
-	app.Run(os.Args)
+	err := app.Run(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
 }
 
 func (c *Cli) Connect() (err error) {
@@ -69,12 +67,21 @@ func (c *Cli) Connect() (err error) {
 	return
 }
 
+func (c *Cli) Init() {
+	err := c.Connect()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
 func (c *Cli) GetResponse(out interface{}) error {
 	decoder := json.NewDecoder(c.conn)
 	return decoder.Decode(out)
 }
 
 func (c *Cli) Deploy(ctx *cli.Context) {
+	c.Init()
 	worker := ctx.String("worker")
 	adapter := ctx.String("adapter")
 	config := ctx.String("config")
@@ -108,6 +115,7 @@ func (c *Cli) Deploy(ctx *cli.Context) {
 }
 
 func (c *Cli) ListApps(ctx *cli.Context) {
+	c.Init()
 	cmd := ListExecutablesCommand{Command{Type: "list-apps"}}
 	err := c.send(cmd)
 	if err != nil {
@@ -127,6 +135,7 @@ func (c *Cli) ListApps(ctx *cli.Context) {
 }
 
 func (c *Cli) ProcStats(ctx *cli.Context) {
+	c.Init()
 	cmd := ProcStatCommand{Command{Type: "proc-stats"}}
 	err := c.send(cmd)
 	if err != nil {
@@ -144,6 +153,7 @@ func (c *Cli) ProcStats(ctx *cli.Context) {
 }
 
 func (c *Cli) Takeover(ctx *cli.Context) {
+	c.Init()
 	app := ctx.String("app")
 	if app == "" {
 		fatal(fmt.Errorf("restart requires an app name"))
