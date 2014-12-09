@@ -28,7 +28,7 @@ func (c *Cli) Run() {
 		Action:    c.Deploy,
 		Options: []cli.Option{
 			cli.StringOption{Name: "worker", Usage: "native worker binary"},
-			cli.StringOption{Name: "adapter", Usage: "foreign worker adapter type"},
+			cli.StringOption{Name: "adapter", Usage: "foreign worker adapter type", Completion: func(*cli.Context) []string { return []string{"thin"} }},
 			cli.StringOption{Name: "config", Usage: "adapter-specific config file"},
 		},
 	}, {

@@ -464,6 +464,7 @@ func removeProcGroup(index int, list []*ProcGroup) (result []*ProcGroup) {
 	return
 }
 
+// removeGroup is called when a group is ready to be removed from the pool.
 func (b *Blizzard) removeGroup(pg *ProcGroup) {
 	b.routers.writing(func() {
 		log("[blizzard] removing proc group %p\n", pg)
