@@ -15,7 +15,7 @@ var ProcessProcCounter int32
 type ProcessGen struct {
 	chMsg               chan gen_proc.ProcCall
 	retChGenCall        chan ProcessGenCallReturn
-	retChAnnounced      chan ProcessAnnouncedReturn
+	retChExec           chan ProcessExecReturn
 	retChShutdown       chan ProcessShutdownReturn
 	retChCleanupProcess chan ProcessCleanupProcessReturn
 	chStop              chan struct{}
@@ -51,6 +51,7 @@ func (msg ProcessEnvelopeGenCall) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -85,54 +86,76 @@ func (proc *Process) GenCallTimeout(f func() interface{}, timeout time.Duration)
 	return
 }
 
-type ProcessEnvelopeAnnounced struct {
+type ProcessEnvelopeExec struct {
 	proc *Process
-	cmd  *blitz.AnnounceCommand
-	w    *WorkerConnection
-	ret  chan ProcessAnnouncedReturn
+
+	ret chan ProcessExecReturn
 	gen_proc.Envelope
 }
 
-func (msg ProcessEnvelopeAnnounced) Call() {
-	ret := make(chan ProcessAnnouncedReturn, 1)
-	msg.proc.retChAnnounced = ret
-	go func(ret chan ProcessAnnouncedReturn) {
-		msg.proc.handleAnnounced(msg.cmd, msg.w)
-		msg.proc.retChAnnounced = nil
-		ret <- ProcessAnnouncedReturn{}
+func (msg ProcessEnvelopeExec) Call() {
+	ret := make(chan ProcessExecReturn, 1)
+	msg.proc.retChExec = ret
+	go func(ret chan ProcessExecReturn) {
+		retval0, retval1, retval2 := msg.proc.handleExec()
+		msg.proc.retChExec = nil
+		ret <- ProcessExecReturn{retval0, retval1, retval2}
 	}(ret)
 	select {
 	case result := <-ret:
 
-		msg.ret <- result
+		if result.retval0 {
+			go func() { msg.ret <- (<-ret) }()
+		} else {
+			msg.ret <- result
+		}
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
 
 }
 
-type ProcessAnnouncedReturn struct {
+type ProcessExecReturn struct {
+	retval0 gen_proc.Deferred
+	retval1 *blitz.AnnounceCommand
+	retval2 error
 }
 
-// Announced is a gen_server interface method.
-func (proc *Process) Announced(cmd *blitz.AnnounceCommand, w *WorkerConnection) {
-	envelope := ProcessEnvelopeAnnounced{proc, cmd, w, make(chan ProcessAnnouncedReturn, 1), gen_proc.Envelope{0}}
+// Exec is a gen_server interface method.
+func (proc *Process) Exec() (retval1 *blitz.AnnounceCommand, retval2 error) {
+	envelope := ProcessEnvelopeExec{proc, make(chan ProcessExecReturn, 1), gen_proc.Envelope{0}}
 	proc.chMsg <- envelope
-	<-envelope.ret
+	retval := <-envelope.ret
+	retval1 = retval.retval1
+	retval2 = retval.retval2
 
 	return
 }
 
-// AnnouncedTimeout is a gen_server interface method.
-func (proc *Process) AnnouncedTimeout(cmd *blitz.AnnounceCommand, w *WorkerConnection, timeout time.Duration) (gen_proc_err error) {
-	envelope := ProcessEnvelopeAnnounced{proc, cmd, w, make(chan ProcessAnnouncedReturn, 1), gen_proc.Envelope{timeout}}
+// ExecTimeout is a gen_server interface method.
+func (proc *Process) ExecTimeout(timeout time.Duration) (retval1 *blitz.AnnounceCommand, retval2 error, gen_proc_err error) {
+	envelope := ProcessEnvelopeExec{proc, make(chan ProcessExecReturn, 1), gen_proc.Envelope{timeout}}
 	proc.chMsg <- envelope
-	_, ok := <-envelope.ret
+	retval, ok := <-envelope.ret
 	if !ok {
 		gen_proc_err = gen_proc.Timeout
 		return
 	}
+	retval1 = retval.retval1
+	retval2 = retval.retval2
 
+	return
+}
+
+func (proc *Process) deferExec(f func(func(retval1 *blitz.AnnounceCommand, retval2 error))) (retval0 gen_proc.Deferred, retval1 *blitz.AnnounceCommand, retval2 error) {
+	retfun := func(ret chan ProcessExecReturn) func(retval1 *blitz.AnnounceCommand, retval2 error) {
+		return func(retval1 *blitz.AnnounceCommand, retval2 error) {
+			ret <- ProcessExecReturn{retval1: retval1, retval2: retval2}
+		}
+	}(proc.retChExec)
+	go f(retfun)
+	retval0 = true
 	return
 }
 
@@ -155,6 +178,7 @@ func (msg ProcessEnvelopeShutdown) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -205,6 +229,7 @@ func (msg ProcessEnvelopeCleanupProcess) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}

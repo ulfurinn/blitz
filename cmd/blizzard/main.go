@@ -3,7 +3,7 @@ package main
 import (
 	"runtime"
 
-	"bitbucket.org/ulfurinn/blitz/blizzard-lib"
+	"bitbucket.org/ulfurinn/blitz/blizzard"
 )
 
 func main() {

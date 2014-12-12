@@ -48,6 +48,7 @@ func (msg assetServerEnvelopeGenCall) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -101,6 +102,7 @@ func (msg assetServerEnvelopeRegister) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -151,6 +153,7 @@ func (msg assetServerEnvelopeUnregister) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -201,6 +204,7 @@ func (msg assetServerEnvelopeBroadcast) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}

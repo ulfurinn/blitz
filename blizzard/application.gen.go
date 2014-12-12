@@ -46,6 +46,7 @@ func (msg ApplicationEnvelopeGenCall) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -99,11 +100,11 @@ func (msg ApplicationEnvelopeBootstrap) Call() {
 	case result := <-ret:
 
 		if result.retval0 {
-			go func() { msg.ret <- result }()
-			return
+			go func() { msg.ret <- (<-ret) }()
+		} else {
+			msg.ret <- result
 		}
 
-		msg.ret <- result
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}

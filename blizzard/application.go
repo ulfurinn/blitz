@@ -3,12 +3,14 @@ package blizzard
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
+
+	"bytes"
 
 	"bitbucket.org/ulfurinn/blitz"
 	"bitbucket.org/ulfurinn/gen_proc"
 
+	"os"
 	"os/exec"
 )
 
@@ -48,12 +50,11 @@ func (app *Application) handleBootstrap() (gen_proc.Deferred, error) {
 	log("[app %p] bootstrap command: %s\n", app, strings.Join(app.BootstrapCmd.Args, " "))
 
 	ok := make(chan *blitz.BootstrapCommand, 1)
-	died := make(chan struct{}, 1)
 
 	procout, _ := app.BootstrapCmd.StdoutPipe()
 	procerr, _ := app.BootstrapCmd.StderrPipe()
 
-	app.server.AddTagCallback(app.Tag, func(cmd interface{}) {
+	app.server.AddTagCallback(app.Tag, func(cmd interface{}, w *WorkerConnection) {
 		log("[app %p] received bootstrap\n", app)
 		ok <- cmd.(*blitz.BootstrapCommand)
 	})
@@ -66,9 +67,12 @@ func (app *Application) handleBootstrap() (gen_proc.Deferred, error) {
 	}
 
 	return app.deferBootstrap(func(ret func(error)) {
+		died := make(chan struct{}, 1)
+		var outlog bytes.Buffer
+		var errlog bytes.Buffer
 		go func() {
-			go io.Copy(os.Stderr, procout)
-			go io.Copy(os.Stderr, procerr)
+			go io.Copy(&outlog, procout)
+			go io.Copy(&errlog, procerr)
 			err := app.BootstrapCmd.Wait()
 			if err != nil {
 				log("[app %p] %v\n", app, err)
@@ -77,23 +81,31 @@ func (app *Application) handleBootstrap() (gen_proc.Deferred, error) {
 		}()
 
 		select {
-		case bootstrapped := <-ok:
-			log("[app %p] bootstrap ok\n", app)
-			err := app.server.Bootstrapped(bootstrapped)
-			log("[app %p] spawned: %v; returning from deferred\n", app, err)
+		case cmd := <-ok:
+			if err := procout.Close(); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
+			if err := procerr.Close(); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
+			log("[app %p] bootstrapped: %d instances of %s\n", app, cmd.Instances, cmd.AppName)
+			app.Instances = cmd.Instances
+			app.AppName = cmd.AppName
+			err := app.server.Bootstrapped(app)
+			app.inspect()
+			log("[app %p] spawned: %v\n", app, err)
 			ret(err)
 		case <-died:
-			err := fmt.Errorf("process died unexpectedly during bootstrap phase")
+			err := fmt.Errorf("process died unexpectedly during bootstrap phase\nstdout:\n%s\nstderr:\n%s", outlog.Bytes(), errlog.Bytes())
 			log("[app %p] bootstrap failed: %v\n", app, err)
 			ret(err)
 		}
 	})
 }
 
-func (app *Application) spawn(cb SpawnedCallback) (pg *ProcGroup, err error) {
+func (app *Application) createProcGroup() (pg *ProcGroup) {
 	pg = NewProcGroup(app.server, app)
 	go pg.Run()
-	err = pg.Spawn(app.Instances, cb)
 	return
 }
 

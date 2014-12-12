@@ -1,5 +1,5 @@
 ---
-servers: 32
+servers: 1
 blitz:
   appname: thin demo
   mount:

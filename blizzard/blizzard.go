@@ -14,9 +14,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/yaml.v1"
-
 	"bitbucket.org/ulfurinn/blitz"
+	"bitbucket.org/ulfurinn/gen_proc"
+
+	"gopkg.in/yaml.v1"
 )
 
 type ExeConfig struct {
@@ -29,7 +30,7 @@ type BlizzardConfig struct {
 	Executables []ExeConfig
 }
 
-type tagCallbackSet map[string]func(interface{})
+type tagCallbackSet map[string]TagCallback
 
 type Blizzard struct {
 	*BlizzardCh `gen_proc:"gen_server"`
@@ -69,6 +70,7 @@ func NewBlizzard() *Blizzard {
 }
 
 func (b *Blizzard) Start() {
+	log("[blizzard] starting\n")
 	blitz.CreateDirectoryStructure()
 	b.readConfig()
 	b.cleanup = time.NewTimer(time.Second)
@@ -91,7 +93,7 @@ func (b *Blizzard) Start() {
 	go b.processControl(listener)
 	err = b.bootAllDeployed()
 	if err != nil {
-		fatal(err)
+		log("[blizzard] error starting configured applications: %v\n", err)
 	}
 	select {}
 }
@@ -138,7 +140,7 @@ func (b *Blizzard) Command(cmd workerCommand) interface{} {
 	log("[blizzard] command: %v\n", reflect.TypeOf(cmd.command))
 	switch command := cmd.command.(type) {
 	case *blitz.AnnounceCommand:
-		b.Announce(command, cmd.WorkerConnection)
+		b.RunTagCallback(command.Tag, command, cmd.WorkerConnection)
 		return blitz.Response{}
 	case *blitz.DeployCommand:
 		resp := blitz.Response{}
@@ -148,16 +150,16 @@ func (b *Blizzard) Command(cmd workerCommand) interface{} {
 			*resp.Error = err.Error()
 			return resp
 		}
-		log("[blizzard] deployed, bootstrapping\n")
+		log("[blizzard] bootstrapping\n")
 		err = app.Bootstrap()
-		log("[blizzard] bootstrap return")
+		log("[blizzard] bootstrap complete: %v\n", err)
 		if err != nil {
 			resp.Error = new(string)
 			*resp.Error = err.Error()
 		}
 		return resp
 	case *blitz.BootstrapCommand:
-		b.RunTagCallback(command.BinaryTag, command)
+		b.RunTagCallback(command.Tag, command, cmd.WorkerConnection)
 		return blitz.Response{}
 	case *blitz.ListExecutablesCommand:
 		resp := blitz.ListExecutablesResponse{Executables: []string{}}
@@ -190,7 +192,9 @@ func (b *Blizzard) Command(cmd workerCommand) interface{} {
 	}
 }
 
-func (b *Blizzard) handleAddTagCallback(tag string, cb func(interface{})) {
+type TagCallback func(cmd interface{}, connection *WorkerConnection)
+
+func (b *Blizzard) handleAddTagCallback(tag string, cb TagCallback) {
 	b.callbacks[tag] = cb
 }
 
@@ -198,25 +202,12 @@ func (b *Blizzard) handleRemoveTagCallback(tag string) {
 	delete(b.callbacks, tag)
 }
 
-func (b *Blizzard) handleRunTagCallback(tag string, data interface{}) {
+func (b *Blizzard) handleRunTagCallback(tag string, data interface{}, w *WorkerConnection) {
 	cb, ok := b.callbacks[tag]
 	delete(b.callbacks, tag)
 	if ok {
-		cb(data)
+		cb(data, w)
 	}
-}
-
-func (b *Blizzard) handleAnnounce(cmd *blitz.AnnounceCommand, worker *WorkerConnection) {
-	procGroup, proc := b.findProcByTag(cmd.Tag)
-	if proc == nil {
-		log("[blizzard] no matching proc found for tag %s\n", cmd.Tag)
-		return
-	}
-	log("[blizzard] announce from proc group %p proc %p\n", procGroup, proc)
-	worker.monitor = b
-	log("[blizzard] announced paths: %v\n", cmd.Paths)
-	procGroup.Announced(proc, cmd, worker)
-	//	TODO; what to do in case of patch mismatch?
 }
 
 func (b *Blizzard) handleDeploy(cmd *blitz.DeployCommand) (*Application, error) {
@@ -258,8 +249,6 @@ func (b *Blizzard) handleDeploy(cmd *blitz.DeployCommand) (*Application, error) 
 		app.Config = cmd.Config
 	}
 
-	b.apps = append(b.apps, app)
-	b.addExeConfig(app)
 	go app.Run()
 	return app, nil
 }
@@ -319,25 +308,24 @@ func (b *Blizzard) readConfig() {
 	}
 }
 
-func (b *Blizzard) handleBootstrapped(cmd *blitz.BootstrapCommand) error {
-	log("[blizzard] bootstrapped, spawning\n")
-	app := b.findExeByTag(cmd.BinaryTag)
-	if app == nil {
-		log("[blizzard] no matching binary for tag %s\n", cmd.BinaryTag)
-		return fmt.Errorf("unknown tag %s", cmd.BinaryTag)
-	}
-	log("[blizzard] bootstrapped %p: %d instances of %s\n", app, cmd.Instances, cmd.AppName)
-	app.Instances = cmd.Instances
-	app.AppName = cmd.AppName
-	pg, err := app.spawn(b.mount)
-	if err == nil {
-		app.inspect()
-		b.procGroups = append(b.procGroups, pg)
-	} else {
-		log("[blizzard] while spawning: %v\n, err")
-	}
-	log("[blizzard] spawned\n")
-	return err
+func (b *Blizzard) handleBootstrapped(app *Application) (gen_proc.Deferred, error) {
+	pg := app.createProcGroup()
+	b.procGroups = append(b.procGroups, pg)
+	return b.deferBootstrapped(func(ret func(error)) {
+		log("[blizzard] spawning procgroup %p\n", pg)
+		err := pg.Spawn()
+		if err == nil {
+			log("[blizzard] spawned\n")
+			b.mount(pg)
+			b.apps = append(b.apps, app)
+			b.addExeConfig(app)
+		} else {
+			app.Stop()
+			log("[blizzard] while spawning: %v\n", err)
+			pg.Shutdown() // TODO: make sure this does not conflict with pg apoptosis
+		}
+		ret(err)
+	})
 }
 
 func (b *Blizzard) handleTakeover(app string, kill bool) (err error) {
@@ -354,10 +342,10 @@ func (b *Blizzard) handleTakeover(app string, kill bool) (err error) {
 	return
 }
 
-func (b *Blizzard) mount(proc *ProcGroup) {
-	log("[blizzard] mounting proc %p\n", proc)
+func (b *Blizzard) mount(pg *ProcGroup) {
+	log("[blizzard] mounting procgroup %p\n", pg)
 	b.routers.writing(func() {
-		for _, path := range proc.paths {
+		for _, path := range pg.paths {
 			if len(path.Path) > 0 {
 				if path.Path[0] == '/' {
 					path.Path = path.Path[1:]
@@ -365,7 +353,7 @@ func (b *Blizzard) mount(proc *ProcGroup) {
 			}
 			split := strings.Split(path.Path, "/")
 			router := b.routers.forVersion(path.Version, true)
-			router.Mount(split, proc, "")
+			router.Mount(split, pg, "")
 		}
 		b.scheduleCleanup()
 	})
@@ -408,26 +396,6 @@ func (b *Blizzard) findExeByTag(tag string) *Application {
 	return nil
 }
 
-func (b *Blizzard) findProcByTag(tag string) (group *ProcGroup, proc *Process) {
-	for _, pg := range b.procGroups {
-		for _, p := range pg.Procs {
-			if p.tag == tag {
-				group = pg
-				proc = p
-				return
-			}
-		}
-		for _, p := range pg.PendingProcs {
-			if p.tag == tag {
-				group = pg
-				proc = p
-				return
-			}
-		}
-	}
-	return
-}
-
 func (b *Blizzard) findGroupByApp(e *Application) (pg *ProcGroup) {
 	for _, pg := range b.procGroups {
 		if pg.exe == e {
@@ -464,7 +432,6 @@ func removeProcGroup(index int, list []*ProcGroup) (result []*ProcGroup) {
 	return
 }
 
-// removeGroup is called when a group is ready to be removed from the pool.
 func (b *Blizzard) removeGroup(pg *ProcGroup) {
 	b.routers.writing(func() {
 		log("[blizzard] removing proc group %p\n", pg)
@@ -473,6 +440,7 @@ func (b *Blizzard) removeGroup(pg *ProcGroup) {
 		if found {
 			b.procGroups = removeProcGroup(index, b.procGroups)
 			pg.busyWg.Wait()
+			pg.inspectDispose()
 			pg.Stop()
 		}
 		b.scheduleCleanup()
@@ -512,15 +480,6 @@ func (b *Blizzard) unusedHandlers(used ProgGroupSet) (result ProgGroupSet) {
 		}
 	}
 	return
-}
-
-func (b *Blizzard) handleWorkerClosed(w *WorkerConnection) {
-	log("[blizzard] lost connection: %s\n", w.connType)
-	pg, i := b.findProcByConnection(w)
-	if i == nil {
-		return
-	}
-	pg.RemoveProc(i)
 }
 
 func (b *Blizzard) handleSnapshot(f func(interface{})) {

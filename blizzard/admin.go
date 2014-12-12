@@ -234,7 +234,7 @@ func ProcGroupInspect(pg *ProcGroup) ProcGroupMessage {
 	m.Type = "proc-group"
 	m.ID = uintptr(unsafe.Pointer(pg))
 	m.Patch = pg.Patch
-	m.State = pg.state
+	m.State = pg.state.String()
 	m.Requests = atomic.LoadInt64(&pg.Requests)
 	m.TotalRequests = atomic.LoadUint64(&pg.TotalRequests)
 	m.Written = atomic.LoadUint64(&pg.Written)

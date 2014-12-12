@@ -29,7 +29,7 @@ type DeployCommand struct {
 
 type BootstrapCommand struct {
 	Command
-	BinaryTag string `json:"tag"`
+	Tag       string `json:"tag"`
 	Instances int    `json:"instances"`
 	AppName   string `json:"appName"`
 }

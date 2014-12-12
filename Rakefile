@@ -15,6 +15,7 @@ task :default do
   gens.each do |gen|
     sh "goimports -w=true #{gen}"
   end
+  # sh 'stringer -type PGState src/bitbucket.org/ulfurinn/blitz/blizzard'
   sh 'go install -ldflags "-X main.patch `TZ=UTC date +%Y%m%d%H%M%S`" bitbucket.org/ulfurinn/blitz/cmd/...'
 end
 

@@ -18,12 +18,10 @@ type BlizzardCh struct {
 	retChAddTagCallback    chan BlizzardAddTagCallbackReturn
 	retChRemoveTagCallback chan BlizzardRemoveTagCallbackReturn
 	retChRunTagCallback    chan BlizzardRunTagCallbackReturn
-	retChAnnounce          chan BlizzardAnnounceReturn
 	retChDeploy            chan BlizzardDeployReturn
 	retChBootstrapped      chan BlizzardBootstrappedReturn
 	retChTakeover          chan BlizzardTakeoverReturn
 	retChCleanup           chan BlizzardCleanupReturn
-	retChWorkerClosed      chan BlizzardWorkerClosedReturn
 	retChSnapshot          chan BlizzardSnapshotReturn
 	chStop                 chan struct{}
 }
@@ -58,6 +56,7 @@ func (msg BlizzardEnvelopeGenCall) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -95,7 +94,7 @@ func (proc *Blizzard) GenCallTimeout(f func() interface{}, timeout time.Duration
 type BlizzardEnvelopeAddTagCallback struct {
 	proc *Blizzard
 	tag  string
-	cb   func(interface{})
+	cb   TagCallback
 	ret  chan BlizzardAddTagCallbackReturn
 	gen_proc.Envelope
 }
@@ -112,6 +111,7 @@ func (msg BlizzardEnvelopeAddTagCallback) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -122,7 +122,7 @@ type BlizzardAddTagCallbackReturn struct {
 }
 
 // AddTagCallback is a gen_server interface method.
-func (proc *Blizzard) AddTagCallback(tag string, cb func(interface{})) {
+func (proc *Blizzard) AddTagCallback(tag string, cb TagCallback) {
 	envelope := BlizzardEnvelopeAddTagCallback{proc, tag, cb, make(chan BlizzardAddTagCallbackReturn, 1), gen_proc.Envelope{0}}
 	proc.chMsg <- envelope
 	<-envelope.ret
@@ -131,7 +131,7 @@ func (proc *Blizzard) AddTagCallback(tag string, cb func(interface{})) {
 }
 
 // AddTagCallbackTimeout is a gen_server interface method.
-func (proc *Blizzard) AddTagCallbackTimeout(tag string, cb func(interface{}), timeout time.Duration) (gen_proc_err error) {
+func (proc *Blizzard) AddTagCallbackTimeout(tag string, cb TagCallback, timeout time.Duration) (gen_proc_err error) {
 	envelope := BlizzardEnvelopeAddTagCallback{proc, tag, cb, make(chan BlizzardAddTagCallbackReturn, 1), gen_proc.Envelope{timeout}}
 	proc.chMsg <- envelope
 	_, ok := <-envelope.ret
@@ -162,6 +162,7 @@ func (msg BlizzardEnvelopeRemoveTagCallback) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -197,6 +198,7 @@ type BlizzardEnvelopeRunTagCallback struct {
 	proc *Blizzard
 	tag  string
 	data interface{}
+	w    *WorkerConnection
 	ret  chan BlizzardRunTagCallbackReturn
 	gen_proc.Envelope
 }
@@ -205,7 +207,7 @@ func (msg BlizzardEnvelopeRunTagCallback) Call() {
 	ret := make(chan BlizzardRunTagCallbackReturn, 1)
 	msg.proc.retChRunTagCallback = ret
 	go func(ret chan BlizzardRunTagCallbackReturn) {
-		msg.proc.handleRunTagCallback(msg.tag, msg.data)
+		msg.proc.handleRunTagCallback(msg.tag, msg.data, msg.w)
 		msg.proc.retChRunTagCallback = nil
 		ret <- BlizzardRunTagCallbackReturn{}
 	}(ret)
@@ -213,6 +215,7 @@ func (msg BlizzardEnvelopeRunTagCallback) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -223,8 +226,8 @@ type BlizzardRunTagCallbackReturn struct {
 }
 
 // RunTagCallback is a gen_server interface method.
-func (proc *Blizzard) RunTagCallback(tag string, data interface{}) {
-	envelope := BlizzardEnvelopeRunTagCallback{proc, tag, data, make(chan BlizzardRunTagCallbackReturn, 1), gen_proc.Envelope{0}}
+func (proc *Blizzard) RunTagCallback(tag string, data interface{}, w *WorkerConnection) {
+	envelope := BlizzardEnvelopeRunTagCallback{proc, tag, data, w, make(chan BlizzardRunTagCallbackReturn, 1), gen_proc.Envelope{0}}
 	proc.chMsg <- envelope
 	<-envelope.ret
 
@@ -232,59 +235,8 @@ func (proc *Blizzard) RunTagCallback(tag string, data interface{}) {
 }
 
 // RunTagCallbackTimeout is a gen_server interface method.
-func (proc *Blizzard) RunTagCallbackTimeout(tag string, data interface{}, timeout time.Duration) (gen_proc_err error) {
-	envelope := BlizzardEnvelopeRunTagCallback{proc, tag, data, make(chan BlizzardRunTagCallbackReturn, 1), gen_proc.Envelope{timeout}}
-	proc.chMsg <- envelope
-	_, ok := <-envelope.ret
-	if !ok {
-		gen_proc_err = gen_proc.Timeout
-		return
-	}
-
-	return
-}
-
-type BlizzardEnvelopeAnnounce struct {
-	proc   *Blizzard
-	cmd    *blitz.AnnounceCommand
-	worker *WorkerConnection
-	ret    chan BlizzardAnnounceReturn
-	gen_proc.Envelope
-}
-
-func (msg BlizzardEnvelopeAnnounce) Call() {
-	ret := make(chan BlizzardAnnounceReturn, 1)
-	msg.proc.retChAnnounce = ret
-	go func(ret chan BlizzardAnnounceReturn) {
-		msg.proc.handleAnnounce(msg.cmd, msg.worker)
-		msg.proc.retChAnnounce = nil
-		ret <- BlizzardAnnounceReturn{}
-	}(ret)
-	select {
-	case result := <-ret:
-
-		msg.ret <- result
-	case <-msg.TimeoutCh():
-		close(msg.ret)
-	}
-
-}
-
-type BlizzardAnnounceReturn struct {
-}
-
-// Announce is a gen_server interface method.
-func (proc *Blizzard) Announce(cmd *blitz.AnnounceCommand, worker *WorkerConnection) {
-	envelope := BlizzardEnvelopeAnnounce{proc, cmd, worker, make(chan BlizzardAnnounceReturn, 1), gen_proc.Envelope{0}}
-	proc.chMsg <- envelope
-	<-envelope.ret
-
-	return
-}
-
-// AnnounceTimeout is a gen_server interface method.
-func (proc *Blizzard) AnnounceTimeout(cmd *blitz.AnnounceCommand, worker *WorkerConnection, timeout time.Duration) (gen_proc_err error) {
-	envelope := BlizzardEnvelopeAnnounce{proc, cmd, worker, make(chan BlizzardAnnounceReturn, 1), gen_proc.Envelope{timeout}}
+func (proc *Blizzard) RunTagCallbackTimeout(tag string, data interface{}, w *WorkerConnection, timeout time.Duration) (gen_proc_err error) {
+	envelope := BlizzardEnvelopeRunTagCallback{proc, tag, data, w, make(chan BlizzardRunTagCallbackReturn, 1), gen_proc.Envelope{timeout}}
 	proc.chMsg <- envelope
 	_, ok := <-envelope.ret
 	if !ok {
@@ -314,6 +266,7 @@ func (msg BlizzardEnvelopeDeploy) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -353,7 +306,7 @@ func (proc *Blizzard) DeployTimeout(cmd *blitz.DeployCommand, timeout time.Durat
 
 type BlizzardEnvelopeBootstrapped struct {
 	proc *Blizzard
-	cmd  *blitz.BootstrapCommand
+	app  *Application
 	ret  chan BlizzardBootstrappedReturn
 	gen_proc.Envelope
 }
@@ -362,14 +315,19 @@ func (msg BlizzardEnvelopeBootstrapped) Call() {
 	ret := make(chan BlizzardBootstrappedReturn, 1)
 	msg.proc.retChBootstrapped = ret
 	go func(ret chan BlizzardBootstrappedReturn) {
-		retval0 := msg.proc.handleBootstrapped(msg.cmd)
+		retval0, retval1 := msg.proc.handleBootstrapped(msg.app)
 		msg.proc.retChBootstrapped = nil
-		ret <- BlizzardBootstrappedReturn{retval0}
+		ret <- BlizzardBootstrappedReturn{retval0, retval1}
 	}(ret)
 	select {
 	case result := <-ret:
 
-		msg.ret <- result
+		if result.retval0 {
+			go func() { msg.ret <- (<-ret) }()
+		} else {
+			msg.ret <- result
+		}
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -377,30 +335,42 @@ func (msg BlizzardEnvelopeBootstrapped) Call() {
 }
 
 type BlizzardBootstrappedReturn struct {
-	retval0 error
+	retval0 gen_proc.Deferred
+	retval1 error
 }
 
 // Bootstrapped is a gen_server interface method.
-func (proc *Blizzard) Bootstrapped(cmd *blitz.BootstrapCommand) (retval0 error) {
-	envelope := BlizzardEnvelopeBootstrapped{proc, cmd, make(chan BlizzardBootstrappedReturn, 1), gen_proc.Envelope{0}}
+func (proc *Blizzard) Bootstrapped(app *Application) (retval1 error) {
+	envelope := BlizzardEnvelopeBootstrapped{proc, app, make(chan BlizzardBootstrappedReturn, 1), gen_proc.Envelope{0}}
 	proc.chMsg <- envelope
 	retval := <-envelope.ret
-	retval0 = retval.retval0
+	retval1 = retval.retval1
 
 	return
 }
 
 // BootstrappedTimeout is a gen_server interface method.
-func (proc *Blizzard) BootstrappedTimeout(cmd *blitz.BootstrapCommand, timeout time.Duration) (retval0 error, gen_proc_err error) {
-	envelope := BlizzardEnvelopeBootstrapped{proc, cmd, make(chan BlizzardBootstrappedReturn, 1), gen_proc.Envelope{timeout}}
+func (proc *Blizzard) BootstrappedTimeout(app *Application, timeout time.Duration) (retval1 error, gen_proc_err error) {
+	envelope := BlizzardEnvelopeBootstrapped{proc, app, make(chan BlizzardBootstrappedReturn, 1), gen_proc.Envelope{timeout}}
 	proc.chMsg <- envelope
 	retval, ok := <-envelope.ret
 	if !ok {
 		gen_proc_err = gen_proc.Timeout
 		return
 	}
-	retval0 = retval.retval0
+	retval1 = retval.retval1
 
+	return
+}
+
+func (proc *Blizzard) deferBootstrapped(f func(func(retval1 error))) (retval0 gen_proc.Deferred, retval1 error) {
+	retfun := func(ret chan BlizzardBootstrappedReturn) func(retval1 error) {
+		return func(retval1 error) {
+			ret <- BlizzardBootstrappedReturn{retval1: retval1}
+		}
+	}(proc.retChBootstrapped)
+	go f(retfun)
+	retval0 = true
 	return
 }
 
@@ -424,6 +394,7 @@ func (msg BlizzardEnvelopeTakeover) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -477,6 +448,7 @@ func (msg BlizzardEnvelopeCleanup) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}
@@ -508,56 +480,6 @@ func (proc *Blizzard) CleanupTimeout(timeout time.Duration) (gen_proc_err error)
 	return
 }
 
-type BlizzardEnvelopeWorkerClosed struct {
-	proc *Blizzard
-	w    *WorkerConnection
-	ret  chan BlizzardWorkerClosedReturn
-	gen_proc.Envelope
-}
-
-func (msg BlizzardEnvelopeWorkerClosed) Call() {
-	ret := make(chan BlizzardWorkerClosedReturn, 1)
-	msg.proc.retChWorkerClosed = ret
-	go func(ret chan BlizzardWorkerClosedReturn) {
-		msg.proc.handleWorkerClosed(msg.w)
-		msg.proc.retChWorkerClosed = nil
-		ret <- BlizzardWorkerClosedReturn{}
-	}(ret)
-	select {
-	case result := <-ret:
-
-		msg.ret <- result
-	case <-msg.TimeoutCh():
-		close(msg.ret)
-	}
-
-}
-
-type BlizzardWorkerClosedReturn struct {
-}
-
-// WorkerClosed is a gen_server interface method.
-func (proc *Blizzard) WorkerClosed(w *WorkerConnection) {
-	envelope := BlizzardEnvelopeWorkerClosed{proc, w, make(chan BlizzardWorkerClosedReturn, 1), gen_proc.Envelope{0}}
-	proc.chMsg <- envelope
-	<-envelope.ret
-
-	return
-}
-
-// WorkerClosedTimeout is a gen_server interface method.
-func (proc *Blizzard) WorkerClosedTimeout(w *WorkerConnection, timeout time.Duration) (gen_proc_err error) {
-	envelope := BlizzardEnvelopeWorkerClosed{proc, w, make(chan BlizzardWorkerClosedReturn, 1), gen_proc.Envelope{timeout}}
-	proc.chMsg <- envelope
-	_, ok := <-envelope.ret
-	if !ok {
-		gen_proc_err = gen_proc.Timeout
-		return
-	}
-
-	return
-}
-
 type BlizzardEnvelopeSnapshot struct {
 	proc *Blizzard
 	f    func(interface{})
@@ -577,6 +499,7 @@ func (msg BlizzardEnvelopeSnapshot) Call() {
 	case result := <-ret:
 
 		msg.ret <- result
+
 	case <-msg.TimeoutCh():
 		close(msg.ret)
 	}

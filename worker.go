@@ -120,7 +120,7 @@ func (w *Worker) bootstrap() error {
 	cmd := BootstrapCommand{}
 	cmd.Type = "bootstrap"
 	cmd.AppName = w.AppName
-	cmd.BinaryTag = tag
+	cmd.Tag = tag
 	if w.Bootstrap != nil {
 		err := w.Bootstrap(w, &cmd)
 		if err != nil {

@@ -62,7 +62,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	fmt.Println(thin)
 	w := blitz.Worker{
 		AppName: thin.Blitz.AppName,
 		Patch:   thin.Blitz.Patch,
@@ -72,9 +71,7 @@ func main() {
 			return nil
 		},
 		Run: func(w *blitz.Worker, cmd *blitz.AnnounceCommand) error {
-			fmt.Println("running thin...")
 			thinProc := exec.Command("thin", "-S", cmd.Address, "start")
-			fmt.Println(thinProc.Args)
 			stdout, err := thinProc.StdoutPipe()
 			if err != nil {
 				return err

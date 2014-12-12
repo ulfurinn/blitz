@@ -1,4 +1,4 @@
-package blitz
+package main
 
 import (
 	"encoding/json"
@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 
+	"bitbucket.org/ulfurinn/blitz"
 	"bitbucket.org/ulfurinn/cli"
 )
 
@@ -14,6 +15,11 @@ type Commander struct {
 
 type Cli struct {
 	conn net.Conn
+}
+
+func fatal(err error) {
+	fmt.Fprintln(os.Stderr, err)
+	os.Exit(1)
 }
 
 func (c *Cli) Run() {
@@ -27,9 +33,9 @@ func (c *Cli) Run() {
 		ShortName: "d",
 		Action:    c.Deploy,
 		Options: []cli.Option{
-			cli.StringOption{Name: "worker", Usage: "native worker binary"},
+			cli.StringOption{Name: "worker", Usage: "native worker binary", Completion: func(*cli.Context) []string { return []string{cli.StdCompletion()} }},
 			cli.StringOption{Name: "adapter", Usage: "foreign worker adapter type", Completion: func(*cli.Context) []string { return []string{"thin"} }},
-			cli.StringOption{Name: "config", Usage: "adapter-specific config file"},
+			cli.StringOption{Name: "config", Usage: "adapter-specific config file", Completion: func(*cli.Context) []string { return []string{cli.StdCompletion()} }},
 		},
 	}, {
 		Name: "list",
@@ -63,7 +69,7 @@ func (c *Cli) Connect() (err error) {
 	if err != nil {
 		return
 	}
-	err = c.send(ConnectionTypeCommand{Command{"connection-type"}, "cli"})
+	err = c.send(blitz.ConnectionTypeCommand{blitz.Command{"connection-type"}, "cli"})
 	return
 }
 
@@ -94,8 +100,8 @@ func (c *Cli) Deploy(ctx *cli.Context) {
 	if adapter != "" && config == "" {
 		fatal(fmt.Errorf("'adapter' requires 'config'"))
 	}
-	cmd := DeployCommand{
-		Command:     Command{Type: "deploy"},
+	cmd := blitz.DeployCommand{
+		Command:     blitz.Command{Type: "deploy"},
 		Application: worker,
 		Adapter:     adapter,
 		Config:      config,
@@ -104,7 +110,7 @@ func (c *Cli) Deploy(ctx *cli.Context) {
 	if err != nil {
 		fatal(err)
 	}
-	var resp Response
+	var resp blitz.Response
 	err = c.GetResponse(&resp)
 	if err != nil {
 		fatal(err)
@@ -116,12 +122,12 @@ func (c *Cli) Deploy(ctx *cli.Context) {
 
 func (c *Cli) ListApps(ctx *cli.Context) {
 	c.Init()
-	cmd := ListExecutablesCommand{Command{Type: "list-apps"}}
+	cmd := blitz.ListExecutablesCommand{blitz.Command{Type: "list-apps"}}
 	err := c.send(cmd)
 	if err != nil {
 		fatal(err)
 	}
-	var resp ListExecutablesResponse
+	var resp blitz.ListExecutablesResponse
 	err = c.GetResponse(&resp)
 	if err != nil {
 		fatal(err)
@@ -136,12 +142,12 @@ func (c *Cli) ListApps(ctx *cli.Context) {
 
 func (c *Cli) ProcStats(ctx *cli.Context) {
 	c.Init()
-	cmd := ProcStatCommand{Command{Type: "proc-stats"}}
+	cmd := blitz.ProcStatCommand{blitz.Command{Type: "proc-stats"}}
 	err := c.send(cmd)
 	if err != nil {
 		fatal(err)
 	}
-	var resp ProcStatResponse
+	var resp blitz.ProcStatResponse
 	err = c.GetResponse(&resp)
 	if err != nil {
 		fatal(err)
@@ -158,8 +164,8 @@ func (c *Cli) Takeover(ctx *cli.Context) {
 	if app == "" {
 		fatal(fmt.Errorf("restart requires an app name"))
 	}
-	cmd := RestartTakeoverCommand{Command{Type: "restart-takeover"}, app, ctx.Bool("kill")}
-	resp := RestartTakeoverResponse{}
+	cmd := blitz.RestartTakeoverCommand{blitz.Command{Type: "restart-takeover"}, app, ctx.Bool("kill")}
+	resp := blitz.RestartTakeoverResponse{}
 	err := c.callBlizzard(cmd, &resp)
 	if err != nil {
 		fatal(err)
