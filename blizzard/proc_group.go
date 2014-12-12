@@ -72,7 +72,7 @@ func (pg *ProcGroup) handleSpawn() (gen_proc.Deferred, error) {
 		for i := 0; i < count; i++ {
 			p := &Process{ProcessGen: NewProcessGen(), server: pg.server, group: pg, tag: randstr(32)}
 			go p.Run()
-			log("[procgroup %p] spawning proc %p\n", pg, p)
+			Logger().Printf("[procgroup %p] spawning proc %p\n", pg, p)
 			pg.AddPending(p)
 			var announcement *blitz.AnnounceCommand
 			announcement, err = p.Exec()
@@ -84,7 +84,7 @@ func (pg *ProcGroup) handleSpawn() (gen_proc.Deferred, error) {
 				}
 			} else {
 				p.Stop()
-				log("[procgroup %p] %v\n", pg, err)
+				Logger().Printf("[procgroup %p] %v\n", pg, err)
 				break
 			}
 		}
@@ -96,7 +96,7 @@ func (pg *ProcGroup) handleSpawn() (gen_proc.Deferred, error) {
 			case PGAbortedSpawn:
 				go pg.Shutdown()
 			default:
-				log("[procgroup %p] don't know how to finalise a spawn in state %v\n", pg, pg.state)
+				Logger().Printf("[procgroup %p] don't know how to finalise a spawn in state %v\n", pg, pg.state)
 			}
 			return nil
 		})
@@ -131,7 +131,7 @@ func (pg *ProcGroup) handleWorkerClosed(w *WorkerConnection) {
 		}
 	}
 	if proc == nil {
-		log("[procgroup %p] no process found for connection %p\n", pg, w)
+		Logger().Printf("[procgroup %p] no process found for connection %p\n", pg, w)
 		return
 	}
 	go pg.RemoveDeadProc(proc)
@@ -178,7 +178,7 @@ func (pg *ProcGroup) handleRemoveDeadProc(p *Process) (found bool) {
 	//	TODO: consider removed and pending?
 	// if no active procs remain, only unmount without removing?
 	if len(pg.Procs) == 0 {
-		log("[procgroup %p] disposing of itself\n", pg)
+		Logger().Printf("[procgroup %p] disposing of itself\n", pg)
 		pg.inspectDispose()
 		go pg.server.removeGroup(pg)
 	}
@@ -232,7 +232,7 @@ func (pg *ProcGroup) handleSize() int {
 // TODO: test takeover failures extensively
 
 func (pg *ProcGroup) Takeover(old *ProcGroup, cb SpawnedCallback, kill bool) error {
-	log("[procgroup %p] starting takeover\n", pg)
+	Logger().Printf("[procgroup %p] starting takeover\n", pg)
 	pg.state = PGTakeover
 	pg.inspect()
 	old.GenCall(func() interface{} {
@@ -259,7 +259,7 @@ func (pg *ProcGroup) Takeover(old *ProcGroup, cb SpawnedCallback, kill bool) err
 			tag:        randstr(32),
 		}
 		go p.Run()
-		log("[procgroup %p] spawning proc %p\n", pg, p)
+		Logger().Printf("[procgroup %p] spawning proc %p\n", pg, p)
 		pg.AddPending(p)
 		cmd, err := p.Exec()
 		pg.PendingSpawned(p, err == nil)
@@ -272,13 +272,13 @@ func (pg *ProcGroup) Takeover(old *ProcGroup, cb SpawnedCallback, kill bool) err
 				cb(pg)
 			}
 			oldProc := old.GetForRemoval()
-			log("[procgroup %p] shutting down old proc %p\n", pg, oldProc)
+			Logger().Printf("[procgroup %p] shutting down old proc %p\n", pg, oldProc)
 			if oldProc != nil {
 				oldProc.busyWg.Wait()
 				oldProc.Shutdown(kill)
 			}
 		} else {
-			log("[procgroup %p] error in takeover: %v\n", pg, err)
+			Logger().Printf("[procgroup %p] error in takeover: %v\n", pg, err)
 			spawnErr = err
 			break
 		}
@@ -287,7 +287,7 @@ func (pg *ProcGroup) Takeover(old *ProcGroup, cb SpawnedCallback, kill bool) err
 	if spawnErr == nil {
 		pg.state = PGReady
 		pg.inspect()
-		log("[procgroup %p] takeover done\n", pg)
+		Logger().Printf("[procgroup %p] takeover done\n", pg)
 		return nil
 	} else {
 		var disposeGroup *ProcGroup
@@ -296,37 +296,37 @@ func (pg *ProcGroup) Takeover(old *ProcGroup, cb SpawnedCallback, kill bool) err
 		} else {
 			disposeGroup = pg
 		}
-		log("[procgroup %p] error completing takeover (remounted to new: %v), shutting down group %p\n", pg, remounted, disposeGroup)
+		Logger().Printf("[procgroup %p] error completing takeover (remounted to new: %v), shutting down group %p\n", pg, remounted, disposeGroup)
 		disposeGroup.Shutdown()
 		return spawnErr
 	}
 }
 
 func (pg *ProcGroup) handleShutdown() {
-	log("[procgroup %p] shutdown requested\n", pg)
+	Logger().Printf("[procgroup %p] shutdown requested\n", pg)
 	switch pg.state {
 	case PGReady, PGAbortedSpawn, PGHandover, PGTakeover:
 		pg.state = PGShutdown
 		pg.inspect()
-		log("[procgroup %p] waiting for running requests\n", pg)
+		Logger().Printf("[procgroup %p] waiting for running requests\n", pg)
 		pg.busyWg.Wait()
-		log("[procgroup %p] shutdown commencing: %d procs\n", pg, len(pg.Procs))
+		Logger().Printf("[procgroup %p] shutdown commencing: %d procs\n", pg, len(pg.Procs))
 		if len(pg.Procs) == 0 {
-			log("[procgroup %p] disposing of itself\n", pg)
+			Logger().Printf("[procgroup %p] disposing of itself\n", pg)
 			pg.inspectDispose()
 			go pg.server.removeGroup(pg)
 		}
 		for _, p := range pg.Procs {
-			log("[procgroup %p] proc %p\n", pg, p)
+			Logger().Printf("[procgroup %p] proc %p\n", pg, p)
 			p.Shutdown(false)
 		}
 	case PGSpawning:
 		pg.state = PGAbortedSpawn
 		pg.inspect()
 	case PGShutdown:
-		log("[procgroup %p] already shutting down\n", pg)
+		Logger().Printf("[procgroup %p] already shutting down\n", pg)
 	default:
-		log("[procgroup %p] don't know how to react to shutdown in state %v\n", pg, pg.state)
+		Logger().Printf("[procgroup %p] don't know how to react to shutdown in state %v\n", pg, pg.state)
 	}
 
 }

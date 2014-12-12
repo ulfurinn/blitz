@@ -29,7 +29,7 @@ type Application struct {
 }
 
 func (app *Application) release() {
-	log("[exe %s] releasing\n", app.Basename)
+	Logger().Printf("[app %s] releasing\n", app.Basename)
 	//os.Rename(app.Exe, fmt.Sprintf("blitz/deploy-old/%s", app.Basename))
 	app.Obsolete = true
 }
@@ -42,12 +42,12 @@ func (app *Application) inspectDispose() {
 }
 
 func (app *Application) handleBootstrap() (gen_proc.Deferred, error) {
-	log("[app %p] bootstrapping binary=%s adapter=%s config=%s\n", app, app.Exe, app.Adapter, app.Config)
+	Logger().Printf("[app %p] bootstrapping binary=%s adapter=%s config=%s\n", app, app.Exe, app.Adapter, app.Config)
 	app.Tag = randstr(32)
 	args := []string{"-bootstrap", "-tag", app.Tag}
 	args = append(args, app.args()...)
 	app.BootstrapCmd = exec.Command(app.executable(), args...)
-	log("[app %p] bootstrap command: %s\n", app, strings.Join(app.BootstrapCmd.Args, " "))
+	Logger().Printf("[app %p] bootstrap command: %s\n", app, strings.Join(app.BootstrapCmd.Args, " "))
 
 	ok := make(chan *blitz.BootstrapCommand, 1)
 
@@ -55,13 +55,13 @@ func (app *Application) handleBootstrap() (gen_proc.Deferred, error) {
 	procerr, _ := app.BootstrapCmd.StderrPipe()
 
 	app.server.AddTagCallback(app.Tag, func(cmd interface{}, w *WorkerConnection) {
-		log("[app %p] received bootstrap\n", app)
+		Logger().Printf("[app %p] received bootstrap\n", app)
 		ok <- cmd.(*blitz.BootstrapCommand)
 	})
 
 	err := app.BootstrapCmd.Start()
 	if err != nil {
-		log("[app %p] bootstrap failed: %v\n", app, err)
+		Logger().Printf("[app %p] bootstrap failed: %v\n", app, err)
 		app.server.RemoveTagCallback(app.Tag)
 		return false, err
 	}
@@ -75,7 +75,7 @@ func (app *Application) handleBootstrap() (gen_proc.Deferred, error) {
 			go io.Copy(&errlog, procerr)
 			err := app.BootstrapCmd.Wait()
 			if err != nil {
-				log("[app %p] %v\n", app, err)
+				Logger().Printf("[app %p] %v\n", app, err)
 			}
 			died <- struct{}{}
 		}()
@@ -88,16 +88,16 @@ func (app *Application) handleBootstrap() (gen_proc.Deferred, error) {
 			if err := procerr.Close(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			}
-			log("[app %p] bootstrapped: %d instances of %s\n", app, cmd.Instances, cmd.AppName)
+			Logger().Printf("[app %p] bootstrapped: %d instances of %s\n", app, cmd.Instances, cmd.AppName)
 			app.Instances = cmd.Instances
 			app.AppName = cmd.AppName
 			err := app.server.Bootstrapped(app)
 			app.inspect()
-			log("[app %p] spawned: %v\n", app, err)
+			Logger().Printf("[app %p] spawned: %v\n", app, err)
 			ret(err)
 		case <-died:
 			err := fmt.Errorf("process died unexpectedly during bootstrap phase\nstdout:\n%s\nstderr:\n%s", outlog.Bytes(), errlog.Bytes())
-			log("[app %p] bootstrap failed: %v\n", app, err)
+			Logger().Printf("[app %p] bootstrap failed: %v\n", app, err)
 			ret(err)
 		}
 	})

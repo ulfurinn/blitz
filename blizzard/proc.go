@@ -74,7 +74,7 @@ func (i *Process) handleExec() (gen_proc.Deferred, *blitz.AnnounceCommand, error
 	procerr, _ := i.cmd.StderrPipe()
 
 	i.server.AddTagCallback(i.tag, func(cmd interface{}, w *WorkerConnection) {
-		//log("[proc %p] received announce\n", i)
+		//Logger().Printf("[proc %p] received announce\n", i)
 		ok <- struct {
 			announce *blitz.AnnounceCommand
 			worker   *WorkerConnection
@@ -83,7 +83,7 @@ func (i *Process) handleExec() (gen_proc.Deferred, *blitz.AnnounceCommand, error
 
 	err := i.cmd.Start()
 	if err != nil {
-		log("[proc %p] boot failed: %v\n", i, err)
+		Logger().Printf("[proc %p] boot failed: %v\n", i, err)
 		i.server.RemoveTagCallback(i.tag)
 		return false, nil, err
 	}
@@ -97,7 +97,7 @@ func (i *Process) handleExec() (gen_proc.Deferred, *blitz.AnnounceCommand, error
 			go io.Copy(&errlog, procerr)
 			err := i.cmd.Wait()
 			if err != nil {
-				log("[proc %p] %v\n", i, err)
+				Logger().Printf("[proc %p] %v\n", i, err)
 			}
 			died <- struct{}{}
 		}()
@@ -110,7 +110,7 @@ func (i *Process) handleExec() (gen_proc.Deferred, *blitz.AnnounceCommand, error
 			if err := procerr.Close(); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 			}
-			log("[proc %p] announced on connection %p\n", i, announced.worker)
+			Logger().Printf("[proc %p] announced on connection %p\n", i, announced.worker)
 			announced.worker.monitor = i.group
 			i.makeRevProxy()
 			i.tag = "" // not needed anymore
@@ -121,7 +121,7 @@ func (i *Process) handleExec() (gen_proc.Deferred, *blitz.AnnounceCommand, error
 			i.inspect()
 			ret(announced.announce, nil)
 		case <-died:
-			log("[proc %p] died during boot\n", i)
+			Logger().Printf("[proc %p] died during boot\n", i)
 			ret(nil, fmt.Errorf("process died unexpectedly\nstdout:\n%s\nstderr:\n%s", outlog.Bytes(), errlog.Bytes()))
 		}
 	})
@@ -153,7 +153,7 @@ func (i *Process) handleShutdown(kill bool) {
 		} else {
 			sig = syscall.SIGTERM
 		}
-		log("[proc %p] shutting down process %d using %v\n", i, i.cmd.Process.Pid, sig)
+		Logger().Printf("[proc %p] shutting down process %d using %v\n", i, i.cmd.Process.Pid, sig)
 		i.state = "shutting-down"
 		i.inspect()
 		i.cmd.Process.Signal(sig)
@@ -169,13 +169,13 @@ func (i *Process) handleShutdown(kill bool) {
 
 func (i *Process) handleCleanupProcess() {
 	if i.cmd != nil {
-		log("[proc %p] collecting process %d\n", i, i.cmd.Process.Pid)
+		Logger().Printf("[proc %p] collecting process %d\n", i, i.cmd.Process.Pid)
 		i.state = "collecting"
 		i.inspect()
 		i.cmd.Wait()
 		err := os.Remove(i.Address) // SIGKILL won't leave a change to clean this up
 		if err != nil && !os.IsNotExist(err) {
-			log("[proc %p] error cleaning up domain socket %v\n", i, i.Address)
+			Logger().Printf("[proc %p] error cleaning up domain socket %v\n", i, i.Address)
 		}
 		i.inspectDispose()
 		i.cmd = nil

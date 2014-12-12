@@ -134,7 +134,7 @@ func (a *assetServer) serveWS(resp http.ResponseWriter, req *http.Request) {
 	}
 	ws, err := upgrader.Upgrade(resp, req, nil)
 	if err != nil {
-		log("[admin] %v\n", err)
+		Logger().Printf("[admin] %v\n", err)
 		return
 	}
 	//log("[admin] new WS connection\n")

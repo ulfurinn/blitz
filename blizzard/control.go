@@ -89,7 +89,7 @@ func (w *WorkerConnection) Run() {
 		err := decoder.Decode(&raw)
 		if err != nil {
 			if !w.isDisconnect(err) {
-				log("[control] %v\n", err)
+				Logger().Printf("[control] %v\n", err)
 			}
 			return
 		}

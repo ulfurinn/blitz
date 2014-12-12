@@ -63,7 +63,3 @@ func badRequestWithMessage(msg interface{}) http.HandlerFunc {
 var notFound http.HandlerFunc = func(resp http.ResponseWriter, req *http.Request) {
 	resp.WriteHeader(404)
 }
-
-func log(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, format, args...)
-}

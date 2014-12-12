@@ -86,7 +86,7 @@ func NewRouter() *Router {
 func (r *Router) Mount(path []string, handler *ProcGroup, prefix string) {
 	if len(path) == 0 || len(path) == 1 && path[0] == "" {
 		if r.handler == nil || r.handler.Patch <= handler.Patch {
-			log("[router] mounting proc %p under %s\n", handler, prefix)
+			Logger().Printf("[router] mounting proc %p under %s\n", handler, prefix)
 			r.handler = handler
 		}
 		return
@@ -111,7 +111,7 @@ func (r *Router) Unmount(proc *ProcGroup) {
 		router.Unmount(proc)
 	}
 	if r.handler == proc {
-		log("[router] unmounting %p from %s\n", proc, r.Path)
+		Logger().Printf("[router] unmounting %p from %s\n", proc, r.Path)
 		r.handler = nil //	mainly to preserve the root router in master
 	}
 	r.routers = routers

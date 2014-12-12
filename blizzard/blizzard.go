@@ -5,6 +5,8 @@ import (
 	"html/template"
 	"io"
 	"io/ioutil"
+	"log"
+	"log/syslog"
 	"net"
 	"net/http"
 	"os"
@@ -28,6 +30,11 @@ type ExeConfig struct {
 
 type BlizzardConfig struct {
 	Executables []ExeConfig
+	Logger      struct {
+		Type           string
+		SyslogSeverity syslog.Priority
+		SyslogFacility syslog.Priority
+	}
 }
 
 type tagCallbackSet map[string]TagCallback
@@ -70,9 +77,10 @@ func NewBlizzard() *Blizzard {
 }
 
 func (b *Blizzard) Start() {
-	log("[blizzard] starting\n")
-	blitz.CreateDirectoryStructure()
 	b.readConfig()
+	b.createLogger()
+	Logger().Printf("[blizzard] starting\n")
+	blitz.CreateDirectoryStructure()
 	b.cleanup = time.NewTimer(time.Second)
 	b.cleanup.Stop()
 	go func() {
@@ -93,8 +101,9 @@ func (b *Blizzard) Start() {
 	go b.processControl(listener)
 	err = b.bootAllDeployed()
 	if err != nil {
-		log("[blizzard] error starting configured applications: %v\n", err)
+		Logger().Printf("[blizzard] error starting configured applications: %v\n", err)
 	}
+	b.writeConfig()
 	select {}
 }
 
@@ -137,7 +146,7 @@ func (b *Blizzard) processControl(listener net.Listener) {
 }
 
 func (b *Blizzard) Command(cmd workerCommand) interface{} {
-	log("[blizzard] command: %v\n", reflect.TypeOf(cmd.command))
+	Logger().Printf("[blizzard] command: %v\n", reflect.TypeOf(cmd.command))
 	switch command := cmd.command.(type) {
 	case *blitz.AnnounceCommand:
 		b.RunTagCallback(command.Tag, command, cmd.WorkerConnection)
@@ -150,9 +159,9 @@ func (b *Blizzard) Command(cmd workerCommand) interface{} {
 			*resp.Error = err.Error()
 			return resp
 		}
-		log("[blizzard] bootstrapping\n")
+		Logger().Printf("[blizzard] bootstrapping\n")
 		err = app.Bootstrap()
-		log("[blizzard] bootstrap complete: %v\n", err)
+		Logger().Printf("[blizzard] bootstrap complete: %v\n", err)
 		if err != nil {
 			resp.Error = new(string)
 			*resp.Error = err.Error()
@@ -271,18 +280,18 @@ var configPath = "blitz/blizzard.yml"
 func (b *Blizzard) writeConfig() {
 	f, err := os.Create(configPath)
 	if err != nil {
-		log("[blizzard] %v\n", err)
+		Logger().Printf("[blizzard] %v\n", err)
 		return
 	}
 	defer f.Close()
 	yml, err := yaml.Marshal(b.config)
 	if err != nil {
-		log("[blizzard] %v\n", err)
+		Logger().Printf("[blizzard] %v\n", err)
 		return
 	}
 	_, err = f.Write(yml)
 	if err != nil {
-		log("[blizzard] %v\n", err)
+		Logger().Printf("[blizzard] %v\n", err)
 		return
 	}
 }
@@ -291,20 +300,40 @@ func (b *Blizzard) readConfig() {
 	f, err := os.Open(configPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			log("[blizzard] %v\n", err)
+			Logger().Printf("[blizzard] %v\n", err)
 		}
 		return
 	}
 	defer f.Close()
 	yml, err := ioutil.ReadAll(f)
 	if err != nil {
-		log("[blizzard] %v\n", err)
+		Logger().Printf("[blizzard] %v\n", err)
 		return
 	}
 	err = yaml.Unmarshal(yml, &b.config)
 	if err != nil {
-		log("[blizzard] %v\n", err)
+		Logger().Printf("[blizzard] %v\n", err)
 		return
+	}
+}
+
+func (b *Blizzard) createLogger() {
+	if b.config.Logger.Type == "" {
+		b.config.Logger.Type = "stderr"
+	}
+	logFlag := log.Ldate | log.Ltime | log.Lshortfile
+retry:
+	fmt.Fprintf(os.Stderr, "[blizzard] logging to %s\n", b.config.Logger.Type)
+	switch b.config.Logger.Type {
+	case "stderr":
+		SetLogger(log.New(os.Stderr, "", logFlag))
+	case "syslog":
+		l, err := syslog.NewLogger(b.config.Logger.SyslogFacility|b.config.Logger.SyslogSeverity, logFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[blizzard] error initializing syslog: %v\n", err)
+			goto retry
+		}
+		SetLogger(l)
 	}
 }
 
@@ -312,16 +341,16 @@ func (b *Blizzard) handleBootstrapped(app *Application) (gen_proc.Deferred, erro
 	pg := app.createProcGroup()
 	b.procGroups = append(b.procGroups, pg)
 	return b.deferBootstrapped(func(ret func(error)) {
-		log("[blizzard] spawning procgroup %p\n", pg)
+		Logger().Printf("[blizzard] spawning procgroup %p\n", pg)
 		err := pg.Spawn()
 		if err == nil {
-			log("[blizzard] spawned\n")
+			Logger().Printf("[blizzard] spawned\n")
 			b.mount(pg)
 			b.apps = append(b.apps, app)
 			b.addExeConfig(app)
 		} else {
 			app.Stop()
-			log("[blizzard] while spawning: %v\n", err)
+			Logger().Printf("[blizzard] while spawning: %v\n", err)
 			pg.Shutdown() // TODO: make sure this does not conflict with pg apoptosis
 		}
 		ret(err)
@@ -343,7 +372,7 @@ func (b *Blizzard) handleTakeover(app string, kill bool) (err error) {
 }
 
 func (b *Blizzard) mount(pg *ProcGroup) {
-	log("[blizzard] mounting procgroup %p\n", pg)
+	Logger().Printf("[blizzard] mounting procgroup %p\n", pg)
 	b.routers.writing(func() {
 		for _, path := range pg.paths {
 			if len(path.Path) > 0 {
@@ -434,7 +463,7 @@ func removeProcGroup(index int, list []*ProcGroup) (result []*ProcGroup) {
 
 func (b *Blizzard) removeGroup(pg *ProcGroup) {
 	b.routers.writing(func() {
-		log("[blizzard] removing proc group %p\n", pg)
+		Logger().Printf("[blizzard] removing proc group %p\n", pg)
 		b.unmount(pg)
 		index, found := findProcGroup(pg, b.procGroups)
 		if found {
@@ -462,7 +491,7 @@ func (b *Blizzard) handleCleanup() {
 		used := b.routers.UsedInstances()
 		unused := b.unusedHandlers(used)
 		for pg := range unused {
-			log("[blizzard] shutting down unused proc group %p\n", pg)
+			Logger().Printf("[blizzard] shutting down unused proc group %p\n", pg)
 			pg.Shutdown()
 		}
 	})
