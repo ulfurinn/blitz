@@ -1,1 +1,1 @@
-# blitz
+# bitbucket.org/ulfurinn/blitz
