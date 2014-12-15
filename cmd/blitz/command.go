@@ -31,6 +31,7 @@ func (c *Cli) Run() {
 		Name:      "deploy",
 		Usage:     "Registers a worker with blizzard",
 		ShortName: "d",
+		Before:    func(*cli.Context) error { return c.Connect() },
 		Action:    c.Deploy,
 		Options: []cli.Option{
 			cli.StringOption{
@@ -120,21 +121,12 @@ func (c *Cli) Connect() (err error) {
 	return
 }
 
-func (c *Cli) Init() {
-	err := c.Connect()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
-
 func (c *Cli) GetResponse(out interface{}) error {
 	decoder := json.NewDecoder(c.conn)
 	return decoder.Decode(out)
 }
 
 func (c *Cli) Deploy(ctx *cli.Context) error {
-	c.Init()
 	worker := ctx.String("worker")
 	adapter := ctx.String("adapter")
 	config := ctx.String("config")
@@ -162,7 +154,6 @@ func (c *Cli) Deploy(ctx *cli.Context) error {
 }
 
 func (c *Cli) ListApps(ctx *cli.Context) error {
-	c.Init()
 	cmd := blitz.ListExecutablesCommand{blitz.Command{Type: blitz.CmdListApps}}
 	var resp blitz.ListExecutablesResponse
 	err := c.callBlizzard(cmd, &resp)
@@ -179,7 +170,6 @@ func (c *Cli) ListApps(ctx *cli.Context) error {
 }
 
 func (c *Cli) ProcStats(ctx *cli.Context) error {
-	c.Init()
 	cmd := blitz.ProcStatCommand{blitz.Command{Type: blitz.CmdProcStats}}
 	var resp blitz.ProcStatResponse
 	err := c.callBlizzard(cmd, &resp)
@@ -194,7 +184,6 @@ func (c *Cli) ProcStats(ctx *cli.Context) error {
 }
 
 func (c *Cli) Takeover(ctx *cli.Context) error {
-	c.Init()
 	app := ctx.String("app")
 	if app == "" {
 		return fmt.Errorf("restart requires --app")
@@ -209,7 +198,6 @@ func (c *Cli) Takeover(ctx *cli.Context) error {
 }
 
 func (c *Cli) ConfigLog(ctx *cli.Context) error {
-	c.Init()
 	isStderr := ctx.Bool("stderr")
 	isSyslog := ctx.Bool("syslog")
 	if (isSyslog && isStderr) || (!isSyslog && !isStderr) {
