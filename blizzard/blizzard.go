@@ -16,25 +16,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/yaml.v1"
+
 	"bitbucket.org/ulfurinn/blitz"
 	"bitbucket.org/ulfurinn/gen_proc"
-
-	"gopkg.in/yaml.v1"
 )
 
 type ExeConfig struct {
 	Type   string
 	Binary string
 	Config string
-}
-
-type BlizzardConfig struct {
-	Executables []ExeConfig
-	Logger      struct {
-		Type           string
-		SyslogSeverity syslog.Priority
-		SyslogFacility syslog.Priority
-	}
 }
 
 type tagCallbackSet map[string]TagCallback
@@ -192,6 +183,17 @@ func (b *Blizzard) Command(cmd workerCommand) interface{} {
 			e := err.Error()
 			resp.Error = &e
 		}
+		return resp
+	case *blitz.ConfigLoggerCommand:
+		resp := blitz.ConfigLoggerResponse{}
+		err := b.config.Logger.UpdateFromCommand(command)
+		if err != nil {
+			e := err.Error()
+			resp.Error = &e
+			return resp
+		}
+		b.createLogger()
+		b.writeConfig()
 		return resp
 	default:
 		resp := blitz.Response{}

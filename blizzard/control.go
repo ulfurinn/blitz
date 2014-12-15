@@ -67,16 +67,18 @@ func blitzCommand(typ string) (cmd interface{}) {
 	switch typ {
 	case "announce":
 		return &blitz.AnnounceCommand{}
-	case "deploy":
+	case blitz.CmdDeploy:
 		return &blitz.DeployCommand{}
 	case "bootstrap":
 		return &blitz.BootstrapCommand{}
-	case "list-apps":
+	case blitz.CmdListApps:
 		return &blitz.ListExecutablesCommand{}
-	case "restart-takeover":
+	case blitz.CmdTakeover:
 		return &blitz.RestartTakeoverCommand{}
-	case "proc-stats":
+	case blitz.CmdProcStats:
 		return &blitz.ProcStatCommand{}
+	case blitz.CmdConfigLogger:
+		return &blitz.ConfigLoggerCommand{}
 	}
 	return nil
 }
